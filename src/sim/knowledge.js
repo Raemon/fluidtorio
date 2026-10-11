@@ -69,6 +69,7 @@ export class Knowledge {
   }
 
   note(text, kind = 'info', mat = null) {
+    if (mat && !this.ensure(mat).seen) return;
     this.game.log(text, kind, mat);
   }
 
@@ -76,6 +77,7 @@ export class Knowledge {
     const k = this.ensure(mat);
     if (!k.seen) {
       k.seen = true;
+      k.seenAt = this.game.time;
       this.game.emit('discover', mat);
     }
   }

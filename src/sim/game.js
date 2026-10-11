@@ -7,6 +7,7 @@ import { Knowledge } from './knowledge.js';
 import { Flotsam, Grapples } from './flotsam.js';
 import { Modules } from './modules.js';
 import { Rocket } from './rocket.js';
+import { Progress } from './progress.js';
 import {
   DT,
   FUNCS,
@@ -50,9 +51,18 @@ export class Game {
     this.tremorWarned = false;
     this.lastTremorAmp = 0;
     this.shake = 0;
+    this.progress = new Progress(this);
+    for (const m of attract ? this.progress.order : this.progress.order.slice(0, 1)) this.progress.introduce(m, false);
     this.buildColony();
     this.flotsam.seed();
-    this.addStock('salvage', 46);
+    this.flotsamReady = true;
+    this.addStock('salvage', 30);
+  }
+
+  /** Retrying the same planet: the notebook and what you'd found survive. */
+  carryOver(prev) {
+    this.knowledge.importFrom(prev.knowledge);
+    this.progress.importFrom(prev.progress);
   }
 
   on(evt, fn) {
@@ -527,7 +537,10 @@ export class Game {
       this.updateBlocks(sdt);
       this.flotsam.update(sdt);
       this.modules.update(sdt);
-      if (!this.attract) this.updateVolcano(sdt);
+      if (!this.attract) {
+        this.updateVolcano(sdt);
+        this.progress.update();
+      }
       this.checkColony();
     }
     this.shake = Math.max(0, this.shake - dt * 1.4);

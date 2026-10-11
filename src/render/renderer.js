@@ -901,7 +901,7 @@ export class Renderer {
       const bot = k === L.length - 1 ? game.planet.floor : game.sea.ifaceY(k + 1, this.cam.x, t);
       const yTop = isFinite(top) ? this.toScreen(0, top).y : -1e9;
       const yBot = this.toScreen(0, bot).y;
-      const y0 = Math.max(yTop, 140);
+      const y0 = Math.max(yTop, 64);
       const y1 = Math.min(yBot, this.cssH - 40);
       if (y1 - y0 < 34) continue;
       const yy = Math.max(y0 + 18, Math.min(y1 - 14, isFinite(top) ? yTop + 18 : y1 - 14));
@@ -916,7 +916,8 @@ export class Renderer {
       ctx.font = '500 11px "JetBrains Mono", monospace';
       ctx.fillStyle = 'rgba(255,250,240,0.7)';
       const rho = l.kind === 'air' ? 'gas' : `ρ ${l.rho.toFixed(2)} t/m³`;
-      const role = l.role === 'fuel' ? '  ▼ FUEL' : l.role === 'oxidizer' ? '  ▲ OXIDISER' : '';
+      const found = game.progress ? game.progress.found : { fuel: true, ox: true };
+      const role = l.role === 'fuel' && found.fuel ? '  ▼ FUEL' : l.role === 'oxidizer' && found.ox ? '  ▲ OXIDISER' : '';
       ctx.fillText(rho + role, x0, yy + 15);
       ctx.shadowBlur = 0;
       if (isFinite(top) && yTop > 50 && yTop < this.cssH - 30) {

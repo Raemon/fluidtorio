@@ -116,12 +116,34 @@ export class Flotsam {
         }
         continue;
       }
+      if (!g.progress.isIntroduced(mat)) continue;
       const n = Math.round(9 * mat.spawn);
+      const up = -this.driftDir(mat);
       for (let i = 0; i < n; i++) {
         let x = (this.rng() * 2 - 1) * (W - 10);
         if (i < 2) x = (8 + this.rng() * 12) * (this.rng() < 0.5 ? -1 : 1);
+        else if (i < 6) x = up * (30 + this.rng() * 90);
         this.spawn(mat, x, this.restY(mat), null);
       }
+    }
+  }
+
+  /** A new kind of flotsam drifts in from upstream. */
+  arrive(mat, announce = true) {
+    const g = this.game;
+    if (mat.cat === 'sink') return;
+    const dir = this.driftDir(mat);
+    const cx = g.colony ? g.colony.body.getPosition().x : 0;
+    const near = [16, 24, 33];
+    for (let i = 0; i < 9; i++) {
+      const d = i < near.length ? near[i] + this.rng() * 4 : 40 + (i - near.length) * 18 + this.rng() * 10;
+      const x = Math.max(-WORLD_HALF_WIDTH + 4, Math.min(WORLD_HALF_WIDTH - 4, cx - dir * d));
+      this.spawn(mat, x, this.restY(mat), null);
+    }
+    if (announce) {
+      const L = g.planet.layers;
+      const where = mat.d < L[3].rho ? 'on the surface' : mat.d < L[4].rho ? `down at the top of ${L[4].name}` : `deep, on top of ${L[5].name}`;
+      g.log(`Something new is drifting in from the ${dir > 0 ? 'west' : 'east'}, ${where}.`, 'info');
     }
   }
 
@@ -137,7 +159,8 @@ export class Flotsam {
         this.spawn(g.planet.salvage, -dir * (WORLD_HALF_WIDTH - 2), 0.3, 0.5, true);
         return;
       }
-      const pool = g.planet.materials.filter((m) => m.cat !== 'sink' || this.rng() < 0.5);
+      const pool = g.planet.materials.filter((m) => g.progress.isIntroduced(m) && (m.cat !== 'sink' || this.rng() < 0.5));
+      if (!pool.length) return;
       const weights = pool.map((m) => (m.cat === 'sink' ? 0.35 : m.spawn));
       let r = this.rng() * weights.reduce((a, b) => a + b, 0);
       let mat = pool[0];
@@ -149,7 +172,10 @@ export class Flotsam {
         }
       }
       const dir = this.driftDir(mat);
-      const x = -dir * (WORLD_HALF_WIDTH - 2);
+      // half arrive from the edge of the world, half just out of sight upstream of the colony
+      const cx = g.colony ? g.colony.body.getPosition().x : 0;
+      const near = Math.max(-WORLD_HALF_WIDTH + 2, Math.min(WORLD_HALF_WIDTH - 2, cx - dir * (55 + this.rng() * 70)));
+      const x = this.rng() < 0.5 ? near : -dir * (WORLD_HALF_WIDTH - 2);
       const y = mat.cat === 'sink' ? 0.4 : this.restY(mat);
       this.spawn(mat, x, y, null);
     }
@@ -291,7 +317,10 @@ export class Grapples {
         best = o;
       }
     }
-    if (!best) return { ok: false, reason: 'Out of reach. Build a crane closer (17 m reach), or wait for it to drift nearer.' };
+    if (!best) {
+      this.game.progress.missedReach();
+      return { ok: false, reason: this.game.progress.has('crane') ? 'Out of reach. Build a Crane nearer to it, or wait for it to drift closer.' : 'Out of reach. Wait for it to drift closer.' };
+    }
     if (this.busy(best)) {
       const gr = this.list.find((x) => x.owner === best);
       if (gr && gr.auto) this.release(gr);
@@ -430,6 +459,7 @@ export class Grapples {
       g.fx.push({ type: 'collect', x: p.x, y: p.y, mat: ref.mat, units: ref.units });
       g.emit('sfx', { name: 'collect', x: p.x, y: p.y });
       g.stats.chunks++;
+      if (!ref.debris && ref.mat.d > g.planet.layers[4].rho) g.progress.findFuel('chunk', ref.mat);
       g.flotsam.remove(ref);
     } else {
       const refund = new Map();

@@ -11,6 +11,24 @@ Nothing comes with a datasheet. Each planet is procedurally generated:
 
 The fastest way off the planet is to learn quickly and cheaply what you are building with.
 
+## How it opens
+
+You start with almost nothing: a raft, a grapple, some salvage, and two kinds of block (Float and Frame). One goal at a time sits under the countdown. Everything else arrives when the world gives you a reason for it:
+
+| When | You get |
+|---|---|
+| your first unknown sample comes aboard | the notebook, the Lab and the density lens |
+| you try to grab something out of reach, or haul a few loads | the Crane |
+| a keel (or a chunk hauled up from the deep) touches the fuel layer | the Pump |
+| a tower breaks into the oxidiser sky | the Condenser |
+| the first joint cracks, or you start pumping | the Smelter and the alloy table |
+| you have both fuel and oxidiser | the Refinery |
+| you have propellant | the rocket parts and the launch forecast |
+
+New kinds of flotsam drift in one at a time, so you meet one unknown material before the next.
+
+Every HUD element has a short tooltip. The two numbers that matter most are always on screen: spare **lift** and **heel**. Every build preview shows what it does to your lift, and how uncertain that is given what you know about the material.
+
 ## How it plays
 
 - **Floating is physics.** Each block displaces fluid in every layer it touches (Archimedes, per block, per layer). Rafts heel, and tall towers capsize light rafts. A heavy keel stabilises you, while a buoyant keel tries to flip you.
@@ -33,6 +51,7 @@ The world is drawn from its density field. Each frame, the objects and heat sour
 
 | | |
 |---|---|
+| Hover anything | a short explanation |
 | Click chunk / wreck | grapple it in |
 | <kbd>1</kbd>–<kbd>0</kbd>, <kbd>T</kbd>, <kbd>C</kbd> | pick a block to build |
 | <kbd>Q</kbd> / <kbd>E</kbd> | cycle material |

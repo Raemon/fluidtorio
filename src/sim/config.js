@@ -39,7 +39,7 @@ export const FUNCS = {
     sMul: 1,
     cost: 3,
     salvage: 0,
-    desc: 'Solid block. Full weight, full strength. Heavy below the waterline makes a stabilising keel.',
+    desc: 'Solid block: full weight, full strength.',
   },
   hollow: {
     name: 'Float',
@@ -51,7 +51,7 @@ export const FUNCS = {
     cost: 2,
     salvage: 0,
     floodable: true,
-    desc: 'Hollow, sealed block: 30% of the weight, 45% of the strength. Floods if cracked or corroded under the surface.',
+    desc: 'Sealed and hollow: light and buoyant, but weak. Floods if cracked below the surface.',
   },
   crane: {
     name: 'Crane',
@@ -63,18 +63,19 @@ export const FUNCS = {
     cost: 5,
     salvage: 2,
     reach: 17,
-    desc: 'Automatically hauls in flotsam within 17 m. Put one deep on a keel to reach the heavy stuff.',
+    desc: 'Grapples flotsam within 17 m by itself. Build it where the flotsam is.',
   },
   lab: {
     name: 'Lab',
     key: '4',
     group: 'industry',
+    fixedMat: 'salvage',
     fill: 0.5,
     equip: 0.8,
     sMul: 0.8,
-    cost: 5,
-    salvage: 4,
-    desc: 'Runs tests on samples: exact density, crush strength, reactivity, alloy crucibles. More labs, more tests at once.',
+    cost: 0,
+    salvage: 7,
+    desc: 'Rebuilt from your test gear. Tests samples exactly: density, strength, reactions, alloys. One test at a time.',
   },
   smelter: {
     name: 'Smelter',
@@ -86,7 +87,7 @@ export const FUNCS = {
     cost: 7,
     salvage: 3,
     heat: 1,
-    desc: 'Fuses two materials into an alloy (3 + 3 → 4). Some pairs are spectacular. Some pairs explode.',
+    desc: 'Fuses two materials into an alloy (3 + 3 → 4). Some pairs explode.',
   },
   pump: {
     name: 'Pump',
@@ -97,7 +98,7 @@ export const FUNCS = {
     sMul: 0.8,
     cost: 4,
     salvage: 3,
-    desc: 'Draws fuel. Only works with its intake inside the fuel layer, far below.',
+    desc: 'Draws fuel. Works only inside the fuel layer.',
   },
   condenser: {
     name: 'Condenser',
@@ -108,7 +109,7 @@ export const FUNCS = {
     sMul: 0.8,
     cost: 4,
     salvage: 3,
-    desc: 'Condenses oxidiser. Only works inside the high oxidiser layer of the sky.',
+    desc: 'Collects oxidiser. Works only inside the oxidiser layer.',
   },
   refinery: {
     name: 'Refinery',
@@ -120,7 +121,7 @@ export const FUNCS = {
     cost: 6,
     salvage: 3,
     heat: 0.6,
-    desc: 'Mixes fuel and oxidiser into propellant (1 + 1 → 1).',
+    desc: 'Turns 1 fuel + 1 oxidiser into 1 propellant.',
   },
   pad: {
     name: 'Launch Pad',
@@ -131,7 +132,7 @@ export const FUNCS = {
     sMul: 1.2,
     cost: 6,
     salvage: 1,
-    desc: 'Rocket engines must stand directly on a pad.',
+    desc: 'Engines must stand on one.',
   },
   engine: {
     name: 'Engine',
@@ -143,7 +144,7 @@ export const FUNCS = {
     sMul: 1,
     cost: 5,
     salvage: 3,
-    desc: '110 kN of thrust, burning 1 propellant per second. Must stand on a Launch Pad.',
+    desc: '110 kN of thrust, burning 1 propellant a second. Stands on a Launch Pad.',
   },
   tank: {
     name: 'Tank',
@@ -155,7 +156,7 @@ export const FUNCS = {
     sMul: 0.6,
     cost: 3,
     salvage: 0,
-    desc: 'Holds 8 propellant (1.6 t when full). Under thrust its shell carries everything above it, at several g.',
+    desc: 'Holds 8 propellant. Stacks on an engine or another tank.',
   },
   capsule: {
     name: 'Capsule',
@@ -168,7 +169,7 @@ export const FUNCS = {
     sMul: 1,
     cost: 0,
     salvage: 8,
-    desc: 'You ride in this. Exactly one, on top of the rocket. Built from salvage.',
+    desc: 'You ride in this. Exactly one, on top of the rocket.',
   },
   core: {
     name: 'Lander Core',
@@ -180,7 +181,7 @@ export const FUNCS = {
     sMul: 1.6,
     cost: 0,
     salvage: 0,
-    desc: 'What is left of your lander. Grapples flotsam within 24 m. If it is lost, so are you.',
+    desc: 'What is left of your lander. Grapples within 24 m. Lose it and the game is over.',
   },
 };
 
@@ -200,8 +201,8 @@ export const BUILD_ORDER = [
 ];
 
 export const LAB_TESTS = {
-  density: { name: 'Densitometer', units: 1, time: 6, desc: 'Weigh a sample and measure what it displaces. Exact density.' },
-  press: { name: 'Crush press', units: 2, time: 10, desc: 'Load a sample until it fails. Exact strength and brittleness.' },
-  soak: { name: 'Soak bath', units: 1, time: 12, desc: 'Sample every layer of sea and sky. Reveals all reactions.' },
-  crucible: { name: 'Crucible', units: 1, time: 8, desc: 'A thimble-sized smelt of two materials. Reveals how they fuse.' },
+  density: { name: 'Densitometer', short: 'Weigh', units: 1, time: 6, desc: 'Exact density.' },
+  press: { name: 'Crush press', short: 'Crush', units: 2, time: 10, desc: 'Exact strength, and whether it warns before it breaks.' },
+  soak: { name: 'Soak bath', short: 'Soak', units: 1, time: 12, desc: 'How it reacts with every layer of sea and sky, safely.' },
+  crucible: { name: 'Crucible', short: 'Crucible', units: 1, time: 8, desc: 'How two materials fuse, safely. A thimble-sized smelt.' },
 };

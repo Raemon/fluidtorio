@@ -151,9 +151,9 @@ class App {
   startGame(keepNotebook = false) {
     this.audio.init();
     this.audio.setMuted(this.muted);
-    const prev = keepNotebook && this.game && !this.game.attract && this.game.seed === this.seed ? this.game.knowledge : null;
+    const prev = keepNotebook && this.game && !this.game.attract && this.game.seed === this.seed ? this.game : null;
     const g = new Game({ seed: this.seed, difficulty: this.difficulty });
-    if (prev) g.knowledge.importFrom(prev);
+    if (prev) g.carryOver(prev);
     this.game = g;
     g.on('sfx', (s) => this.audio.play(s.name, s));
     g.on('end', (e) => setTimeout(() => this.showEnd(e), e.won ? 3200 : 1200));
@@ -174,8 +174,8 @@ class App {
     $('title').classList.add('hidden');
     $('end').classList.add('hidden');
     $('hud').classList.remove('hidden');
-    g.log(`Landfall on Strata. Mount ${g.volcanoName()} is waking. Haul in what drifts past and learn what it's made of.`, 'info');
-    if (prev) g.log('Your notebook from the last attempt survived. Same planet, same materials.', 'good');
+    g.log(`Landfall on Strata. Mount ${g.volcanoName()} is waking.`, 'info');
+    if (prev) g.log('Your notebook survived the last attempt. Same planet, same materials.', 'good');
     this.click();
   }
 
@@ -220,10 +220,9 @@ class App {
   }
 
   syncSpeedButtons() {
-    document.querySelectorAll('.speed').forEach((b) => {
-      const s = +b.dataset.speed;
-      b.classList.toggle('active', s === 0 ? this.paused : !this.paused && s === this.speed);
-    });
+    $('btn-pause').classList.toggle('on', this.paused);
+    $('btn-pause').textContent = this.paused ? '▶' : '❚❚';
+    $('btn-speed').textContent = `${this.speed}×`;
   }
 
   // ───────────────────────────── input
@@ -247,6 +246,7 @@ class App {
       ui.mouse.x = p.x;
       ui.mouse.y = p.y;
       ui.mouse.in = true;
+      ui.tipEl = null;
       this.renderer.lens.x = p.x;
       this.renderer.lens.y = p.y;
       if (!down) return;
