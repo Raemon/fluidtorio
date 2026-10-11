@@ -1,11 +1,20 @@
 import { pl } from './physics.js';
-import { WORLD_HALF_WIDTH, GRAPPLE_SPEED, REEL_SPEED, GRAPPLE_MAX_FORCE, GRAPPLE_REACH_CORE, GRAPPLE_REACH_CRANE, FUNCS } from './config.js';
-import { SURFACE } from './sea.js';
+import {
+  WORLD_HALF_WIDTH,
+  GRAPPLE_SPEED,
+  REEL_SPEED,
+  GRAPPLE_MAX_FORCE,
+  GRAPPLE_REACH_CRANE,
+  CAST_REACH,
+  FUNCS,
+  UNITS_PER_M2,
+  PACKED_SALVAGE_DENSITY,
+} from './config.js';
 import { CAT_STRUCT, CAT_CHUNK } from './structure.js';
 
 let CHUNK_ID = 1;
 
-function chunkShape(rng, r) {
+export function chunkShape(rng, r) {
   const n = 5 + Math.floor(rng() * 3);
   const pts = [];
   const off = rng() * Math.PI * 2;
@@ -17,7 +26,16 @@ function chunkShape(rng, r) {
   return pts;
 }
 
-function polyArea(pts) {
+export function boxShape(w, h) {
+  return [
+    [-w / 2, -h / 2],
+    [w / 2, -h / 2],
+    [w / 2, h / 2],
+    [-w / 2, h / 2],
+  ];
+}
+
+export function polyArea(pts) {
   let a = 0;
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i],
@@ -27,11 +45,14 @@ function polyArea(pts) {
   return Math.abs(a) / 2;
 }
 
+/**
+ * Everything loose in the world: flotsam in the sea, and cargo sitting on the colony.
+ * A hauled chunk never becomes a number: it lands on the deck and stays a body with weight.
+ */
 export class Flotsam {
   constructor(game) {
     this.game = game;
     this.chunks = [];
-    this.spawnT = 0;
     this.rng = Math.random;
   }
 
@@ -53,12 +74,26 @@ export class Flotsam {
     return c >= 0 ? 1 : -1;
   }
 
-  spawn(mat, x, y, size, debris = false) {
+  /**
+   * opts: size (radius), debris (salvage wreckage), crate (a salvage crate), units, pts, angle, vx, vy, site.
+   */
+  spawn(mat, x, y, opts = {}) {
+    if (typeof opts === 'number') opts = { size: opts };
     const g = this.game;
-    const r = size || 0.45 + this.rng() * 0.32;
-    const pts = chunkShape(this.rng, r);
+    const salvage = mat.kind === 'salvage';
+    const debris = !!opts.debris || (salvage && !opts.crate);
+    let pts = opts.pts;
+    if (!pts) {
+      if (opts.crate) pts = boxShape(opts.w || 1.25, opts.h || 1.0);
+      else {
+        let r = opts.size;
+        if (!r && opts.units) r = Math.sqrt(opts.units / UNITS_PER_M2 / 2.3);
+        pts = chunkShape(this.rng, r || 0.45 + this.rng() * 0.32);
+      }
+    }
     const area = polyArea(pts);
-    const body = g.physics.createBody(x, y, this.rng() * 6.28, null);
+    const density = salvage ? PACKED_SALVAGE_DENSITY : mat.d;
+    const body = g.physics.createBody(x, y, opts.angle ?? this.rng() * 6.28, null);
     const lv = new Float64Array(pts.length * 2);
     pts.forEach((p, i) => {
       lv[2 * i] = p[0];
@@ -66,9 +101,9 @@ export class Flotsam {
     });
     const fixture = body.createFixture({
       shape: new pl.Polygon(pts.map((p) => new pl.Vec2(p[0], p[1]))),
-      density: debris ? 0.45 : mat.d,
-      friction: 0.8,
-      restitution: 0.05,
+      density,
+      friction: 0.85,
+      restitution: 0.04,
       filterCategoryBits: CAT_CHUNK,
       filterMaskBits: 0xffff,
     });
@@ -78,19 +113,29 @@ export class Flotsam {
       body,
       pts,
       area,
-      units: debris ? 2 + Math.floor(this.rng() * 3) : Math.max(3, Math.round(area * 7)),
+      units: opts.units || Math.max(2, Math.round(area * UNITS_PER_M2 * (debris ? 0.8 : 1))),
       debris,
+      crate: !!opts.crate,
+      site: opts.site || null,
       settled: 0,
       layer: -1,
       fizz: 0,
       grabbed: null,
-      measured: 0,
+      claimed: null,
+      aboard: false,
+      aboardT: 0,
       hover: 0,
     };
     fixture.setUserData({ owner: null, chunk, lv, n: pts.length, area, currentMul: 1 });
     body.setUserData({ kind: 'chunk', chunk, wetFrac: 0 });
+    if (opts.vx !== undefined) body.setLinearVelocity(new pl.Vec2(opts.vx, opts.vy || 0));
     this.chunks.push(chunk);
     return chunk;
+  }
+
+  /** A fresh item of cargo, sized to its units. */
+  produce(mat, units, x, y, opts = {}) {
+    return this.spawn(mat, x, y, { ...opts, units, size: Math.sqrt(units / UNITS_PER_M2 / 2.3) });
   }
 
   remove(chunk) {
@@ -101,84 +146,33 @@ export class Flotsam {
     chunk.dead = true;
   }
 
-  seed() {
-    const g = this.game;
-    const W = WORLD_HALF_WIDTH;
-    for (const x of [-15, 13, 21]) this.spawn(g.planet.salvage, x + this.rng() * 3, 0.3, 0.5, true);
-    for (const mat of g.planet.materials) {
-      if (mat.cat === 'sink') {
-        const n = 9;
-        for (let i = 0; i < n; i++) {
-          let x = (this.rng() * 2 - 1) * (i < 3 ? 22 : 70);
-          if (Math.abs(x) < 6) x += 8 * Math.sign(x || 1);
-          const y = g.physics.floorAt(x) + 0.9;
-          this.spawn(mat, x, y, 0.5 + this.rng() * 0.3);
-        }
-        continue;
-      }
-      if (!g.progress.isIntroduced(mat)) continue;
-      const n = Math.round(9 * mat.spawn);
-      const up = -this.driftDir(mat);
-      for (let i = 0; i < n; i++) {
-        let x = (this.rng() * 2 - 1) * (W - 10);
-        if (i < 2) x = (8 + this.rng() * 12) * (this.rng() < 0.5 ? -1 : 1);
-        else if (i < 6) x = up * (30 + this.rng() * 90);
-        this.spawn(mat, x, this.restY(mat), null);
-      }
+  /** Is this item resting on top of the colony (or on cargo that is), out of the water? */
+  touchingColony(c) {
+    const col = this.game.colony;
+    if (!col || !c.body) return false;
+    const ud = c.body.getUserData();
+    if (ud && ud.wetFrac > 0.6) return false;
+    for (let ce = c.body.getContactList(); ce; ce = ce.next) {
+      const ct = ce.contact;
+      if (!ct.isTouching()) continue;
+      const od = ce.other.getUserData();
+      const support = ce.other === col.body || (od && od.kind === 'chunk' && od.chunk.aboard && od.chunk !== c);
+      if (!support) continue;
+      // the contact normal must point up from the support into the item: it's lying on it
+      const n = ct.getWorldManifold(null).normal;
+      const up = ct.getFixtureA().getBody() === ce.other ? n.y : -n.y;
+      if (up > 0.45) return true;
     }
+    return false;
   }
 
-  /** A new kind of flotsam drifts in from upstream. */
-  arrive(mat, announce = true) {
-    const g = this.game;
-    if (mat.cat === 'sink') return;
-    const dir = this.driftDir(mat);
-    const cx = g.colony ? g.colony.body.getPosition().x : 0;
-    const near = [16, 24, 33];
-    for (let i = 0; i < 9; i++) {
-      const d = i < near.length ? near[i] + this.rng() * 4 : 40 + (i - near.length) * 18 + this.rng() * 10;
-      const x = Math.max(-WORLD_HALF_WIDTH + 4, Math.min(WORLD_HALF_WIDTH - 4, cx - dir * d));
-      this.spawn(mat, x, this.restY(mat), null);
-    }
-    if (announce) {
-      const L = g.planet.layers;
-      const where = mat.d < L[3].rho ? 'on the surface' : mat.d < L[4].rho ? `down at the top of ${L[4].name}` : `deep, on top of ${L[5].name}`;
-      g.log(`Something new is drifting in from the ${dir > 0 ? 'west' : 'east'}, ${where}.`, 'info');
-    }
+  aboard() {
+    return this.chunks.filter((c) => c.aboard && !c.grabbed && c.body);
   }
 
   update(dt) {
     const g = this.game;
     const t = g.time;
-    this.spawnT -= dt;
-    const free = this.chunks.filter((c) => c.mat.cat !== 'sink' || c.layer < 5).length;
-    if (this.spawnT <= 0 && free < 56) {
-      this.spawnT = 1.8 + this.rng() * 2;
-      if (this.rng() < 0.1) {
-        const dir = this.game.planet.layers[3].current >= 0 ? 1 : -1;
-        this.spawn(g.planet.salvage, -dir * (WORLD_HALF_WIDTH - 2), 0.3, 0.5, true);
-        return;
-      }
-      const pool = g.planet.materials.filter((m) => g.progress.isIntroduced(m) && (m.cat !== 'sink' || this.rng() < 0.5));
-      if (!pool.length) return;
-      const weights = pool.map((m) => (m.cat === 'sink' ? 0.35 : m.spawn));
-      let r = this.rng() * weights.reduce((a, b) => a + b, 0);
-      let mat = pool[0];
-      for (let i = 0; i < pool.length; i++) {
-        r -= weights[i];
-        if (r <= 0) {
-          mat = pool[i];
-          break;
-        }
-      }
-      const dir = this.driftDir(mat);
-      // half arrive from the edge of the world, half just out of sight upstream of the colony
-      const cx = g.colony ? g.colony.body.getPosition().x : 0;
-      const near = Math.max(-WORLD_HALF_WIDTH + 2, Math.min(WORLD_HALF_WIDTH - 2, cx - dir * (55 + this.rng() * 70)));
-      const x = this.rng() < 0.5 ? near : -dir * (WORLD_HALF_WIDTH - 2);
-      const y = mat.cat === 'sink' ? 0.4 : this.restY(mat);
-      this.spawn(mat, x, y, null);
-    }
     for (let i = this.chunks.length - 1; i >= 0; i--) {
       const c = this.chunks[i];
       const p = c.body.getPosition();
@@ -186,6 +180,15 @@ export class Flotsam {
         if (!c.grabbed) this.remove(c);
         continue;
       }
+      const wasAboard = c.aboard;
+      if (this.touchingColony(c)) {
+        c.aboardT = 0.8;
+        c.aboard = true;
+      } else {
+        c.aboardT -= dt;
+        if (c.aboardT <= 0) c.aboard = false;
+      }
+      if (wasAboard && !c.aboard && !c.claimed) g.emit('overboard', c);
       const layer = g.sea.layerAt(p.x, p.y, t);
       c.layer = layer;
       const v = c.body.getLinearVelocity();
@@ -193,7 +196,7 @@ export class Flotsam {
       if (layer <= 5 && g.experiments.near(p.x, p.y)) g.knowledge.exposed(c.mat, layer, dt);
       if (c.mat.react[layer] && c.mat.react[layer] !== 'none' && layer <= 5) c.fizz = Math.min(1, c.fizz + dt * 2);
       else c.fizz = Math.max(0, c.fizz - dt);
-      if (sp < 0.35 && !c.grabbed) c.settled += dt;
+      if (sp < 0.35 && !c.grabbed && !c.aboard) c.settled += dt;
       else c.settled = 0;
       if (c.settled > 0.8) this.observeRest(c);
     }
@@ -202,11 +205,9 @@ export class Flotsam {
   /** A chunk at rest tells you where its density sits between the fluids around it. */
   observeRest(c, force = false) {
     const g = this.game;
-    const col = g.colony;
-    if (!col || !c.body || c.debris) return;
+    if (!c.body || c.debris || c.crate || c.aboard) return;
     const p = c.body.getPosition();
-    const cp = col.body.getPosition();
-    if (!force && Math.abs(p.x - cp.x) > 60) return;
+    if (!force && !g.experiments.near(p.x, p.y)) return;
     if (c.observed) return;
     c.observed = true;
     const L = g.planet.layers;
@@ -217,8 +218,7 @@ export class Flotsam {
       if (c.mat.d > L[5].rho) g.knowledge.densityInterval(c.mat, L[5].rho, Infinity, `sinks through ${L[5].name}`);
       return;
     }
-    const up = Math.abs(p.y - surf) < 1.2 ? 2 : null;
-    if (up !== null) {
+    if (Math.abs(p.y - surf) < 1.2) {
       g.knowledge.densityInterval(c.mat, 0, L[3].rho, `floats on ${L[3].name}`);
       return;
     }
@@ -232,6 +232,10 @@ export class Flotsam {
   }
 }
 
+/**
+ * Lines: cast by a colonist with a rod, or by a crane. A line hooks a target and reels it to its owner,
+ * pulling on the colony as it does. Whatever arrives is set down on the deck.
+ */
 export class Grapples {
   constructor(game) {
     this.game = game;
@@ -239,66 +243,55 @@ export class Grapples {
     this.autoT = 0;
   }
 
-  reachOf(block) {
-    return block.fn === 'core' ? GRAPPLE_REACH_CORE : GRAPPLE_REACH_CRANE;
+  isColonist(o) {
+    return !!o.colonist;
   }
 
-  ownerPos(block) {
-    const s = block.struct;
-    const p = s.body.getWorldPoint(new pl.Vec2(block.gx, block.gy + (block.fn === 'crane' ? 0.3 : 0)));
+  reachOf(o) {
+    return this.isColonist(o) ? CAST_REACH : GRAPPLE_REACH_CRANE;
+  }
+
+  ownerPos(o) {
+    if (this.isColonist(o)) return this.game.colonists.handPos(o);
+    const s = o.struct;
+    const p = s.body.getWorldPoint(new pl.Vec2(o.gx, o.gy + 0.3));
     return { x: p.x, y: p.y };
   }
 
-  busy(block) {
-    return this.list.some((gr) => gr.owner === block);
+  ownerStruct(o) {
+    return this.isColonist(o) ? this.game.colony : o.struct;
   }
 
-  targeted(obj) {
-    return this.list.some((gr) => gr.target === obj);
+  /** The block that feels the line's pull. */
+  ownerBlock(o) {
+    return this.isColonist(o) ? this.game.colonists.supportOf(o) : o;
+  }
+
+  busy(o) {
+    return this.list.some((gr) => gr.owner === o);
   }
 
   targetPos(target) {
-    const body = target.kind === 'chunk' ? target.ref.body : target.ref.body;
+    if (target.kind === 'castaway') return { x: target.ref.x, y: target.ref.y + 0.5 };
+    if (target.kind === 'wreck' && target.ref.dead) return null;
+    const body = target.ref.body;
     if (!body) return null;
     const p = body.getWorldCenter();
     return { x: p.x, y: p.y };
   }
 
-  owners() {
+  cranes() {
     const col = this.game.colony;
     if (!col) return [];
-    return col.list.filter((b) => b.fn === 'core' || b.fn === 'crane');
+    return col.list.filter((b) => b.fn === 'crane');
   }
 
-  /** Pick the free grapple that can reach the target soonest. */
-  fire(target) {
-    const tp = this.targetPos(target);
-    if (!tp) return { ok: false, reason: 'Nothing there.' };
-    if (this.list.some((gr) => gr.target.ref === target.ref)) return { ok: false, reason: 'Already hauling that in.' };
-    let best = null,
-      bestD = Infinity;
-    for (const o of this.owners()) {
-      const op = this.ownerPos(o);
-      const d = Math.hypot(tp.x - op.x, tp.y - op.y);
-      if (d > this.reachOf(o)) continue;
-      const busy = this.busy(o);
-      const score = d + (busy ? 1000 : 0);
-      if (score < bestD) {
-        bestD = score;
-        best = o;
-      }
-    }
-    if (!best) {
-      this.game.progress.missedReach();
-      return { ok: false, reason: this.game.progress.has('crane') ? 'Out of reach. Build a Crane nearer to it, or wait for it to drift closer.' : 'Out of reach. Wait for it to drift closer.' };
-    }
-    if (this.busy(best)) {
-      const gr = this.list.find((x) => x.owner === best);
-      if (gr && gr.auto) this.release(gr);
-      else return { ok: false, reason: 'That grapple is busy.' };
-    }
-    this.launch(best, target, false);
-    return { ok: true };
+  owners() {
+    return [...this.cranes(), ...this.game.colonists.list];
+  }
+
+  hooked(ref) {
+    return this.list.some((gr) => gr.target.ref === ref);
   }
 
   launch(owner, target, auto) {
@@ -309,6 +302,7 @@ export class Grapples {
       const v = target.ref.body.getLinearVelocity();
       if (target.ref.settled > 0.3 || Math.hypot(v.x, v.y) < 0.6) this.game.flotsam.observeRest(target.ref, true);
     }
+    if (target.kind === 'castaway') target.ref.hooked = gr;
     this.passThrough(target, true);
     this.list.push(gr);
     this.game.emit('sfx', { name: 'grappleFire', x: op.x, y: op.y });
@@ -319,30 +313,33 @@ export class Grapples {
     const i = this.list.indexOf(gr);
     if (i >= 0) this.list.splice(i, 1);
     if (gr.target.kind === 'chunk' && gr.target.ref.grabbed === gr) gr.target.ref.grabbed = null;
+    if (gr.target.kind === 'castaway' && gr.target.ref.hooked === gr) gr.target.ref.hooked = null;
     this.passThrough(gr.target, false);
     if (why) this.game.log(why, 'info');
+    gr.done = true;
   }
 
   passThrough(target, on) {
     const ref = target.ref;
-    if (!ref || !ref.body || ref.dead) return;
+    if (target.kind === 'castaway' || !ref || !ref.body || ref.dead) return;
     if (target.kind === 'chunk') {
       for (let f = ref.body.getFixtureList(); f; f = f.getNext()) f.setFilterData({ groupIndex: 0, categoryBits: CAT_CHUNK, maskBits: on ? 0xffff & ~CAT_STRUCT : 0xffff });
     } else ref.setPassThrough(on);
   }
 
+  /** Cranes haul by themselves. */
   update(dt) {
     const g = this.game;
     this.autoT -= dt;
     if (this.autoT <= 0) {
       this.autoT = 0.6;
-      for (const o of this.owners()) {
-        if (o.fn !== 'crane' || this.busy(o) || o.state.auto === false) continue;
+      for (const o of this.cranes()) {
+        if (this.busy(o) || o.state.auto === false) continue;
         const op = this.ownerPos(o);
         let best = null,
           bd = Infinity;
         for (const c of g.flotsam.chunks) {
-          if (c.grabbed || !c.body) continue;
+          if (c.grabbed || c.aboard || c.claimed || !c.body) continue;
           const p = c.body.getPosition();
           const d = Math.hypot(p.x - op.x, p.y - op.y);
           if (d < GRAPPLE_REACH_CRANE && d < bd) {
@@ -359,10 +356,12 @@ export class Grapples {
   step(gr, dt) {
     const g = this.game;
     const owner = gr.owner;
-    if (!owner.struct || owner.struct !== g.colony || owner.struct.dead) {
+    const struct = this.ownerStruct(owner);
+    if (!struct || struct !== g.colony || struct.dead || (!this.isColonist(owner) && owner.struct !== g.colony)) {
       this.release(gr);
       return;
     }
+    if (gr.target.kind === 'castaway') return this.stepCastaway(gr, dt);
     const ref = gr.target.ref;
     if (!ref.body || ref.dead) {
       this.release(gr);
@@ -400,7 +399,7 @@ export class Grapples {
       uy = dy / d;
     const mass = tb.getMass();
     const tv = tb.getLinearVelocity();
-    const ov = owner.struct.body.getLinearVelocityFromWorldPoint(new pl.Vec2(op.x, op.y));
+    const ov = struct.body.getLinearVelocityFromWorldPoint(new pl.Vec2(op.x, op.y));
     const relAway = -((tv.x - ov.x) * ux + (tv.y - ov.y) * uy);
     let F = 0;
     if (d > gr.len) F = mass * 30 * (d - gr.len) + mass * 7 * relAway;
@@ -408,45 +407,113 @@ export class Grapples {
     gr.tension = F;
     if (F > 0) {
       tb.applyForceToCenter(new pl.Vec2(ux * F, uy * F), true);
-      owner.struct.body.applyForce(new pl.Vec2(-ux * F, -uy * F), new pl.Vec2(op.x, op.y), true);
-      owner.ex -= ux * F;
-      owner.ey -= uy * F;
+      struct.body.applyForce(new pl.Vec2(-ux * F, -uy * F), new pl.Vec2(op.x, op.y), true);
+      const blk = this.ownerBlock(owner);
+      if (blk) {
+        blk.ex -= ux * F;
+        blk.ey -= uy * F;
+      }
     }
-    if (d < 2) {
+    if (d < 1.7) {
       this.collect(gr);
       return;
     }
     if (gr.t > 45) this.release(gr, F >= GRAPPLE_MAX_FORCE * 0.98 ? 'Too heavy to haul in. The line slipped.' : 'The line slipped.');
   }
 
+  /** A castaway on the line swims along it. */
+  stepCastaway(gr, dt) {
+    const g = this.game;
+    const cw = gr.target.ref;
+    const op = this.ownerPos(gr.owner);
+    gr.t += dt;
+    if (gr.phase === 'out') {
+      const dx = cw.x - gr.hx,
+        dy = cw.y + 0.5 - gr.hy;
+      const d = Math.hypot(dx, dy);
+      const step = GRAPPLE_SPEED * dt;
+      if (d <= step + 0.3) {
+        gr.phase = 'reel';
+        g.world.castawayHooked(cw);
+      } else {
+        gr.hx += (dx / d) * step;
+        gr.hy += (dy / d) * step;
+      }
+      return;
+    }
+    // swim towards the line's owner, staying at the surface until close
+    const tx = op.x,
+      ty = Math.min(op.y, g.sea.surfaceY(cw.x, g.time) + 0.1);
+    const dx = tx - cw.x,
+      dy = ty - cw.y;
+    const d = Math.hypot(dx, dy);
+    const sp = 3.2;
+    cw.x += (dx / (d || 1)) * Math.min(d, sp * dt);
+    cw.y += (dy / (d || 1)) * Math.min(d, sp * dt);
+    cw.swimming = true;
+    gr.hx = cw.x;
+    gr.hy = cw.y + 0.5;
+    if (Math.hypot(op.x - cw.x, op.y - cw.y) < 1.8) {
+      this.release(gr);
+      g.world.rescue(cw, gr.owner);
+    }
+  }
+
+  /** Whatever comes up the line is set down on the deck beside whoever hauled it. */
+  landingSpot(owner) {
+    const g = this.game;
+    const col = g.colony;
+    if (this.isColonist(owner)) return g.colonists.landingSpot(owner);
+    const lp = { x: owner.gx, y: owner.gy };
+    const inward = lp.x > col.core.gx ? -1 : 1;
+    return col.body.getWorldPoint(new pl.Vec2(lp.x + inward * 0.6, lp.y + 1.2));
+  }
+
   collect(gr) {
     const g = this.game;
     const ref = gr.target.ref;
-    const p = ref.body.getWorldCenter();
+    const owner = gr.owner;
     this.release(gr);
+    const spot = this.landingSpot(owner);
+    const col = g.colony;
+    const v = col.body.getLinearVelocityFromWorldPoint(new pl.Vec2(spot.x, spot.y));
     if (gr.target.kind === 'chunk') {
-      g.addStock(ref.mat.id, ref.units);
+      // swing it aboard: it lands, and from now on the raft carries its weight
+      ref.body.setTransform(new pl.Vec2(spot.x, spot.y), ref.body.getAngle());
+      ref.body.setLinearVelocity(new pl.Vec2(v.x, v.y - 0.5));
+      ref.body.setAngularVelocity(0);
+      ref.aboard = true;
+      ref.aboardT = 1.2;
+      ref.observedAboard = true;
       g.knowledge.see(ref.mat);
-      g.fx.push({ type: 'collect', x: p.x, y: p.y, mat: ref.mat, units: ref.units });
-      g.emit('sfx', { name: 'collect', x: p.x, y: p.y });
+      g.fx.push({ type: 'collect', x: spot.x, y: spot.y, mat: ref.mat, units: ref.units, debris: ref.debris });
+      g.emit('sfx', { name: 'collect', x: spot.x, y: spot.y });
       g.stats.chunks++;
-      if (!ref.debris && ref.mat.d > g.planet.layers[4].rho) g.progress.findFuel('chunk', ref.mat);
-      g.flotsam.remove(ref);
+      if (!ref.debris && !ref.crate && ref.mat.d > g.planet.layers[4].rho) g.progress.findFuel('chunk', ref.mat);
+      g.emit('haul', ref);
     } else {
+      // a wreck: break it down into salvage on the deck
       const refund = new Map();
       for (const b of ref.list) {
         const fn = FUNCS[b.fn];
-        const add = (id, n) => refund.set(id, (refund.get(id) || 0) + n);
-        if (fn.fixedMat) add('salvage', Math.floor((fn.salvage || 0) * 0.5));
+        const add = (m, n) => refund.set(m, (refund.get(m) || 0) + n);
+        if (fn.fixedMat) add(g.planet.salvage, Math.floor((fn.salvage || 0) * 0.5));
         else {
-          add(b.mat.id, Math.floor(fn.cost * 0.5));
-          add('salvage', Math.floor((fn.salvage || 0) * 0.5));
+          add(b.mat, Math.floor(fn.cost * 0.5));
+          add(g.planet.salvage, Math.floor((fn.salvage || 0) * 0.5));
         }
       }
-      for (const [id, n] of refund) if (n > 0) g.addStock(id, n);
-      g.fx.push({ type: 'collect', x: p.x, y: p.y, mat: null, units: 0, salvage: refund });
-      g.emit('sfx', { name: 'collect', x: p.x, y: p.y });
       g.removeStructure(ref);
+      let k = 0;
+      for (const [m, n] of refund)
+        if (n > 0) {
+          const c = g.flotsam.produce(m, n, spot.x + (k++ - 0.5) * 0.6, spot.y + 0.4);
+          c.body.setLinearVelocity(new pl.Vec2(v.x, v.y));
+          c.aboard = true;
+          c.aboardT = 1.2;
+        }
+      g.fx.push({ type: 'collect', x: spot.x, y: spot.y, mat: null, units: 0 });
+      g.emit('sfx', { name: 'collect', x: spot.x, y: spot.y });
     }
   }
 }

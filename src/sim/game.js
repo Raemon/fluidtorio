@@ -9,6 +9,10 @@ import { Modules } from './modules.js';
 import { Rocket } from './rocket.js';
 import { Progress } from './progress.js';
 import { Experiments } from './experiments.js';
+import { Cargo } from './cargo.js';
+import { Construction } from './build.js';
+import { Colonists } from './colonists.js';
+import { World } from './world.js';
 import {
   DT,
   FUNCS,
@@ -23,8 +27,10 @@ import { Rng } from './rng.js';
 const STRESS_EVERY = 3;
 
 export class Game {
-  constructor({ seed = (Math.random() * 1e9) >>> 0, difficulty = 'standard', attract = false } = {}) {
+  constructor({ seed = (Math.random() * 1e9) >>> 0, difficulty = 'standard', attract = false, sandbox = false } = {}) {
     this.seed = seed;
+    // a sandbox (the title screen, test bots) builds instantly from an abstract store
+    this.sandbox = attract || sandbox;
     this.difficulty = DIFFICULTIES[difficulty] ? difficulty : 'standard';
     this.diff = DIFFICULTIES[this.difficulty];
     this.attract = attract;
@@ -38,7 +44,7 @@ export class Game {
     this.fx = [];
     this.flags = {};
     this.stock = new Map();
-    this.stats = { chunks: 0, cubes: 0, weighings: 0, findings: 0, blocks: 0, collapses: 0, alloys: 0, launches: 0 };
+    this.stats = { chunks: 0, cubes: 0, weighings: 0, findings: 0, blocks: 0, collapses: 0, alloys: 0, launches: 0, rescued: 0 };
     this.state = 'playing';
     this.structures = [];
     this.knowledge = new Knowledge(this);
@@ -47,6 +53,9 @@ export class Game {
     this.modules = new Modules(this);
     this.rocket = new Rocket(this);
     this.experiments = new Experiments(this);
+    this.cargo = new Cargo(this);
+    this.construction = new Construction(this);
+    this.colonists = new Colonists(this);
     this.rng = new Rng(seed ^ 0xbadc0de);
     this.stepCount = 0;
     this.tremorAt = 70;
@@ -54,11 +63,14 @@ export class Game {
     this.lastTremorAmp = 0;
     this.shake = 0;
     this.progress = new Progress(this);
-    for (const m of attract ? this.progress.order : this.progress.order.slice(0, 1)) this.progress.introduce(m, false);
+    this.anchored = true;
+    this.rowDir = 0;
     this.buildColony();
-    this.flotsam.seed();
-    this.flotsamReady = true;
-    this.addStock('salvage', 30);
+    this.world = new World(this);
+    this.world.build();
+    if (this.sandbox) this.addStock('salvage', 30);
+    if (!attract) this.colonists.spawn(-1, 1, 'Ada');
+    else for (const x of [-3, 3]) this.colonists.spawn(x, 1);
   }
 
   /** Retrying the same planet: the notebook and what you'd found survive. */
@@ -83,13 +95,35 @@ export class Game {
     this.emit('log', entry);
   }
 
-  stockOf(id) {
-    return this.stock.get(id) || 0;
+  /** Fuel, oxidiser and propellant are tracked as quantities; everything else is cargo aboard. */
+  isFluid(id) {
+    return id === 'fuel' || id === 'ox' || id === 'prop';
   }
 
-  addStock(id, n) {
-    this.stock.set(id, Math.max(0, (this.stock.get(id) || 0) + n));
-    this.emit('stock', id);
+  stockOf(id) {
+    if (this.sandbox || this.isFluid(id)) return this.stock.get(id) || 0;
+    return this.cargo.unitsOf(id);
+  }
+
+  /** Take material (from stockpiles, then loose items), or set new material down on the deck. */
+  addStock(id, n, at = null) {
+    if (this.sandbox || this.isFluid(id)) {
+      this.stock.set(id, Math.max(0, (this.stock.get(id) || 0) + n));
+      this.emit('stock', id);
+      return;
+    }
+    if (n < 0) return this.cargo.consume(id, -n);
+    if (n > 0) {
+      const mat = materialById(this.planet, id);
+      const col = this.colony;
+      const p = at || (col ? col.worldPos(col.core.gx, col.core.gy + 1) : { x: 0, y: 2 });
+      let left = n;
+      while (left > 0) {
+        const k = Math.min(left, 8);
+        left -= k;
+        this.cargo.produce(mat, k, p.x + (Math.random() - 0.5) * 0.4, p.y + 0.3);
+      }
+    }
   }
 
   get colony() {
@@ -109,6 +143,29 @@ export class Game {
     this.colonyStruct = s;
     this.structures.push(s);
     this.anchorX = 0;
+  }
+
+  // ───────────────────────────── travel
+
+  /** Row the colony east (1), west (-1), or stop (0). Rowing hauls the anchor up first. */
+  setRow(dir) {
+    this.rowDir = dir;
+    if (dir) this.anchored = false;
+    this.emit('travel', null);
+  }
+
+  dropAnchor() {
+    const col = this.colony;
+    this.anchored = true;
+    this.rowDir = 0;
+    if (col) this.anchorX = col.body.getWorldCenter().x;
+    this.emit('sfx', { name: 'thud' });
+    this.emit('travel', null);
+  }
+
+  raiseAnchor() {
+    this.anchored = false;
+    this.emit('travel', null);
   }
 
   removeStructure(s) {
@@ -143,19 +200,24 @@ export class Game {
     return true;
   }
 
-  canPlace(gx, gy, fnId, mat) {
+  /**
+   * Can a block go here? When planning (the normal game), other plans count as structure and
+   * the material doesn't have to be aboard yet: colonists will fetch it.
+   */
+  canPlace(gx, gy, fnId, mat, planning = !this.sandbox) {
     const col = this.colony;
     if (!col || this.state !== 'playing') return { ok: false, reason: '' };
     const fn = FUNCS[fnId];
     if (!fn || fnId === 'core') return { ok: false, reason: '' };
     if (fn.fixedMat) mat = materialById(this.planet, fn.fixedMat);
     if (!mat) return { ok: false, reason: 'Pick a material.' };
-    if (col.at(gx, gy)) return { ok: false, reason: 'Occupied.' };
+    const B = this.construction;
+    if (col.at(gx, gy) || (planning && B.at(gx, gy))) return { ok: false, reason: 'Occupied.' };
     let adj = false;
-    for (const [dx, dy] of DIRS) if (col.at(gx + dx, gy + dy)) adj = true;
+    for (const [dx, dy] of DIRS) if (col.at(gx + dx, gy + dy) || (planning && B.at(gx + dx, gy + dy))) adj = true;
     if (!adj) return { ok: false, reason: 'Must touch the colony.' };
     if (Math.abs(gx) > 60 || gy > 60 || gy < -50) return { ok: false, reason: 'Too far out.' };
-    const below = col.at(gx, gy - 1);
+    const below = col.at(gx, gy - 1) || (planning && B.at(gx, gy - 1)) || null;
     if (fnId === 'engine' && (!below || below.fn !== 'pad')) return { ok: false, reason: 'Engines must stand on a Launch Pad.' };
     if ((fnId === 'tank' || fnId === 'capsule') && (!below || !FUNCS[below.fn].rocket || below.fn === 'capsule'))
       return { ok: false, reason: 'Stack it on an engine or tank.' };
@@ -168,15 +230,26 @@ export class Game {
       if (s.at(Math.round(lp.x), Math.round(lp.y)) && Math.hypot(lp.x - Math.round(lp.x), lp.y - Math.round(lp.y)) < 0.7)
         return { ok: false, reason: 'Wreckage is in the way.' };
     }
-    if (!this.canAfford(fnId, mat)) return { ok: false, reason: 'Not enough material.' };
+    if (!planning && !this.canAfford(fnId, mat)) return { ok: false, reason: 'Not enough material.' };
+    if (planning && fnId === 'capsule' && B.list().some((p) => p.fn === 'capsule')) return { ok: false, reason: 'You only need one capsule.' };
     return { ok: true, mat };
   }
 
+  /** Place a block: in the sandbox at once, otherwise as a plan for the crew to build. */
   place(gx, gy, fnId, mat) {
-    const chk = this.canPlace(gx, gy, fnId, mat);
+    if (this.sandbox) return this.placeBlock(gx, gy, fnId, mat, false);
+    const chk = this.canPlace(gx, gy, fnId, mat, true);
     if (!chk.ok) return chk;
-    mat = chk.mat;
-    for (const [id, n] of this.costOf(fnId, mat)) this.addStock(id, -n);
+    const plan = this.construction.add(gx, gy, fnId, chk.mat);
+    return { ok: true, plan };
+  }
+
+  /** The block itself goes in (paid: its material was already delivered). */
+  placeBlock(gx, gy, fnId, mat, paid = false) {
+    const chk = this.canPlace(gx, gy, fnId, mat, false);
+    if (!chk.ok && !(paid && chk.reason === 'Not enough material.')) return chk;
+    mat = chk.mat || (FUNCS[fnId].fixedMat ? materialById(this.planet, FUNCS[fnId].fixedMat) : mat);
+    if (!paid) for (const [id, n] of this.costOf(fnId, mat)) this.addStock(id, -n);
     const col = this.colony;
     const b = col.addBlock(gx, gy, fnId, mat);
     if (fnId === 'crane') b.state.auto = true;
@@ -193,10 +266,11 @@ export class Game {
 
   refundFor(b, frac) {
     const fn = FUNCS[b.fn];
-    if (fn.fixedMat) this.addStock('salvage', Math.floor((fn.salvage || 0) * frac));
+    const at = b.struct ? b.struct.worldPos(b.gx, b.gy) : null;
+    if (fn.fixedMat) this.addStock('salvage', Math.floor((fn.salvage || 0) * frac), at);
     else {
-      this.addStock(b.mat.id, Math.floor(fn.cost * frac));
-      this.addStock('salvage', Math.floor((fn.salvage || 0) * frac));
+      this.addStock(b.mat.id, Math.floor(fn.cost * frac), at);
+      this.addStock('salvage', Math.floor((fn.salvage || 0) * frac), at);
     }
   }
 
@@ -206,6 +280,7 @@ export class Game {
     const wp = col.worldPos(b.gx, b.gy);
     if (b.fuel) this.addStock('prop', b.fuel);
     this.experiments.disturb('You took a block off while weighing, so that reading is lost.');
+    if (b.fn === 'stockpile') this.cargo.spill(b);
     this.refundFor(b, 0.75);
     col.removeBlock(b);
     col.body.resetMassData();
@@ -220,6 +295,7 @@ export class Game {
     const col = this.colony;
     if (!b || b.struct !== col || b.fn === 'core') return false;
     this.experiments.disturb('You cut a block loose while weighing, so that reading is lost.');
+    if (b.fn === 'stockpile') this.cargo.spill(b);
     const s = col.detach([b], 'wreck');
     this.structures.push(s);
     s.body.applyLinearImpulse(new pl.Vec2((b.gx >= 0 ? 1 : -1) * 2 * b.mass, 1.5 * b.mass), s.body.getWorldCenter(), true);
@@ -255,6 +331,7 @@ export class Game {
     const comps = struct.components(() => root);
     if (comps.length <= 1) return;
     if (struct === this.colony) this.experiments.disturb('Part of the colony broke away while weighing.');
+    for (let i = 1; i < comps.length; i++) for (const b of comps[i]) if (b.fn === 'stockpile') this.cargo.spill(b);
     for (let i = 1; i < comps.length; i++) {
       const s = struct.detach(comps[i], 'wreck');
       this.structures.push(s);
@@ -484,7 +561,8 @@ export class Game {
     if (this.time > this.tremorAt) {
       const amp = (0.4 + 1.8 * prog * prog + this.rng.range(-0.08, 0.15)) * this.diff.tremorScale;
       this.lastTremorAmp = amp;
-      this.sea.addPacket(this.time, amp, 9 + this.rng.range(0, 5), 8.5 + this.rng.range(0, 2), -1);
+      const cx = this.colony ? this.colony.body.getWorldCenter().x : 0;
+      this.sea.addPacket(this.time, amp, 9 + this.rng.range(0, 5), 8.5 + this.rng.range(0, 2), -1, cx + 150);
       this.emit('tremor', { warn: false, amp });
       this.emit('sfx', { name: 'rumble' });
       this.shake = Math.min(1, this.shake + 0.4 + prog * 0.4);
@@ -495,7 +573,7 @@ export class Game {
       this.state = 'erupting';
       this.eruptT = 0;
       this.log('Mount ' + this.volcanoName() + ' erupts.', 'bad');
-      this.sea.addPacket(this.time, 3.5, 16, 12, -1);
+      this.sea.addPacket(this.time, 3.5, 16, 12, -1, (this.colony ? this.colony.body.getWorldCenter().x : 0) + 200);
       this.emit('sfx', { name: 'eruption' });
       this.emit('erupt');
     }
@@ -526,13 +604,16 @@ export class Game {
       b.ex = 0;
       b.ey = 0;
     }
-    if (col) {
+    if (col && this.anchored) {
+      // the anchor chain holds the colony near where it was dropped
       const wc = col.body.getWorldCenter();
       const v = col.body.getLinearVelocity();
       const M = col.body.getMass();
       const fx = -M * (0.9 * (wc.x - this.anchorX) + 1.4 * v.x);
       col.body.applyForceToCenter(new pl.Vec2(Math.max(-12 * M, Math.min(12 * M, fx)), 0), true);
     }
+    this.colonists.update(dt);
+    this.world.update(dt);
     this.grapples.update(dt);
     this.rocket.update(dt);
     this.physics.step(dt, this.time);
@@ -545,6 +626,7 @@ export class Game {
       this.flotsam.update(sdt);
       this.modules.update(sdt);
       this.experiments.update(sdt);
+      if (this.stepCount % 60 === 0) this.construction.prune();
       if (!this.attract) {
         this.updateVolcano(sdt);
         this.progress.update();

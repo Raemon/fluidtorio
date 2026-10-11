@@ -114,7 +114,7 @@ export function generatePlanet(seed) {
       rho: rho1,
       top: 0,
       color: hsl(l1Hue, 0.52, 0.36),
-      current: rng.sign() * rng.range(0.7, 1.2),
+      current: rng.sign() * rng.range(0.05, 0.16),
       drag: 1,
     },
     {
@@ -126,7 +126,7 @@ export function generatePlanet(seed) {
       rho: rho2,
       top: d1,
       color: hsl(l2Hue, 0.5, 0.25),
-      current: rng.sign() * rng.range(0.35, 0.7),
+      current: rng.sign() * rng.range(0.04, 0.12),
       drag: 1.3,
     },
     {
@@ -138,7 +138,7 @@ export function generatePlanet(seed) {
       rho: rho3,
       top: d2,
       color: hsl(l3Hue, 0.45, 0.15),
-      current: rng.sign() * rng.range(0.2, 0.4),
+      current: rng.sign() * rng.range(0.02, 0.08),
       drag: 1.7,
     },
   ];

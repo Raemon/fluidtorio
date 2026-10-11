@@ -206,6 +206,30 @@ export function functionIcon(fn) {
       ctx.stroke();
       break;
     }
+    case 'stockpile': {
+      // an open bin: walls and a floor, nothing on top
+      ctx.fillStyle = 'rgba(8,8,12,0.55)';
+      ctx.beginPath();
+      ctx.roundRect(12, 10, 40, 40, 4);
+      ctx.fill();
+      ctx.strokeStyle = light;
+      S(5);
+      ctx.beginPath();
+      ctx.moveTo(10, 56);
+      ctx.lineTo(10, 9);
+      ctx.lineTo(54, 9);
+      ctx.lineTo(54, 56);
+      ctx.stroke();
+      ctx.strokeStyle = ink;
+      S(1.6);
+      ctx.beginPath();
+      for (const y of [22, 36]) {
+        ctx.moveTo(12, y);
+        ctx.lineTo(52, y);
+      }
+      ctx.stroke();
+      break;
+    }
     case 'crane': {
       plate(8, 6);
       ctx.strokeStyle = '#f5c542';

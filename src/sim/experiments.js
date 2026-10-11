@@ -1,10 +1,12 @@
 import { FUNCS, GRAPPLE_REACH_CORE, SWELL_GAIN } from './config.js';
 import { Structure } from './structure.js';
+import { pl } from './physics.js';
 
 /** How far from the colony the crew can still watch what happens. */
 export const WATCH_RANGE = 60;
 /** A test cube is a solid frame block, at frame cost. */
 export const DROP_COST = FUNCS.frame.cost;
+export const THROW_RANGE = 12;
 const SETTLE = 2.5;
 
 
@@ -53,12 +55,37 @@ export class Experiments {
     return { ok: true };
   }
 
-  drop(mat, x, y) {
+  /** opts.free: the material was already taken (a colonist cut the cube and threw it). */
+  /** A colonist can throw a test cube out over open water, within a stone's throw of the deck. */
+  canThrow(mat, x, y) {
     const g = this.game;
-    const chk = this.canDrop(mat, x, y);
-    if (!chk.ok) return chk;
-    g.addStock(mat.id, -DROP_COST);
+    const col = g.colony;
+    if (!col || g.state !== 'playing') return { ok: false, reason: '' };
+    if (!mat) return { ok: false, reason: 'Pick a material.' };
+    if (!g.colonists.list.length) return { ok: false, reason: 'Nobody aboard to throw it.' };
+    const lp = col.localPos(x, y);
+    for (let gy = Math.round(lp.y); gy > -60; gy--) if (col.at(Math.round(lp.x), gy)) return { ok: false, reason: 'That would land on the raft. Throw it over open water.' };
+    if (y < g.physics.floorAt(x) + 0.7) return { ok: false, reason: 'That is the sea floor.' };
+    let near = Infinity;
+    for (const n of g.colonists.nodes.values()) {
+      if (!n.stand) continue;
+      const w = g.colonists.nodeWorld(n);
+      near = Math.min(near, Math.hypot(w.x - x, w.y - y));
+    }
+    if (near > THROW_RANGE) return { ok: false, reason: 'Too far to throw.' };
+    if (g.stockOf(mat.id) < DROP_COST) return { ok: false, reason: `A cube takes ${DROP_COST} ${mat.name}, and there isn't that much aboard.` };
+    return { ok: true };
+  }
+
+  drop(mat, x, y, opts = {}) {
+    const g = this.game;
+    if (!opts.free) {
+      const chk = this.canDrop(mat, x, y);
+      if (!chk.ok) return chk;
+      g.addStock(mat.id, -DROP_COST);
+    }
     const body = g.physics.createBody(x, y, 0, null);
+    if (opts.vx !== undefined) body.setLinearVelocity(new pl.Vec2(opts.vx, opts.vy || 0));
     const s = new Structure(g, 'wreck', body);
     const b = s.addBlock(0, 0, 'frame', mat);
     body.resetMassData();

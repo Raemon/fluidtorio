@@ -1,7 +1,7 @@
 export const G = 9.8;
 export const DT = 1 / 60;
 
-export const WORLD_HALF_WIDTH = 170;
+export const WORLD_HALF_WIDTH = 720;
 export const ESCAPE_ALTITUDE = 120;
 export const ESCAPE_SPEED = 170;
 
@@ -24,10 +24,24 @@ export const TANK_CAPACITY = 8;
 export const EXTRACT_PERIOD = 3.5;
 
 export const DIFFICULTIES = {
-  relaxed: { label: 'Relaxed', minutes: 40, tremorScale: 0.7 },
-  standard: { label: 'Standard', minutes: 28, tremorScale: 1 },
-  harrowing: { label: 'Harrowing', minutes: 19, tremorScale: 1.25 },
+  relaxed: { label: 'Relaxed', minutes: 50, tremorScale: 0.7 },
+  standard: { label: 'Standard', minutes: 36, tremorScale: 1 },
+  harrowing: { label: 'Harrowing', minutes: 26, tremorScale: 1.25 },
 };
+
+/** Cargo: one unit of material is a quarter of a square metre of it (the world is 1 m deep). */
+export const UNITS_PER_M2 = 6;
+/** Salvage crates and wreckage are mostly air. */
+export const PACKED_SALVAGE_DENSITY = 0.5;
+export const STOCKPILE_CAPACITY = 12;
+
+/** Colonists. */
+export const COLONIST_MASS = 0.09;
+export const WALK_SPEED = 2.2;
+export const CLIMB_SPEED = 1.2;
+export const CAST_REACH = 11;
+export const BUILD_TIME = 1.1;
+export const ROW_FORCE = 6.5;
 
 export const FUNCS = {
   frame: {
@@ -37,7 +51,7 @@ export const FUNCS = {
     fill: 1,
     equip: 0,
     sMul: 1,
-    cost: 3,
+    cost: 4,
     salvage: 0,
     desc: 'Solid block: full weight, full strength.',
   },
@@ -53,96 +67,108 @@ export const FUNCS = {
     floodable: true,
     desc: 'Sealed and hollow: light and buoyant, but weak. Floods if cracked below the surface.',
   },
+  stockpile: {
+    name: 'Stockpile',
+    key: '3',
+    group: 'structure',
+    fill: 0.35,
+    equip: 0,
+    sMul: 0.7,
+    cost: 3,
+    salvage: 0,
+    capacity: 12,
+    desc: 'A bin that keeps loose cargo from sliding about. Whatever you put in it, its joints carry.',
+  },
   crane: {
     name: 'Crane',
-    key: '3',
+    key: '4',
     group: 'harvest',
     fill: 0.5,
     equip: 0.6,
     sMul: 0.8,
-    cost: 5,
+    cost: 3,
     salvage: 2,
     reach: 17,
-    desc: 'Grapples flotsam within 17 m by itself. Build it where the flotsam is.',
+    desc: 'Fishes by itself: hauls in whatever drifts within 17 m. Build it out where the flotsam is.',
   },
   smelter: {
     name: 'Smelter',
-    key: '4',
+    key: '5',
     group: 'industry',
     fill: 0.6,
     equip: 1.4,
     sMul: 0.9,
-    cost: 7,
+    cost: 4,
     salvage: 3,
     heat: 1,
     desc: 'Fuses two materials into an alloy (3 + 3 → 4). Some pairs explode: build it out on a limb.',
   },
   pump: {
     name: 'Pump',
-    key: '5',
-    group: 'industry',
-    fill: 0.5,
-    equip: 0.7,
-    sMul: 0.8,
-    cost: 4,
-    salvage: 3,
-    desc: 'Draws fuel. Works only inside the fuel layer.',
-  },
-  condenser: {
-    name: 'Condenser',
     key: '6',
     group: 'industry',
     fill: 0.5,
     equip: 0.7,
     sMul: 0.8,
-    cost: 4,
-    salvage: 3,
+    cost: 3,
+    salvage: 2,
+    desc: 'Draws fuel. Works only inside the fuel layer.',
+  },
+  condenser: {
+    name: 'Condenser',
+    key: '7',
+    group: 'industry',
+    fill: 0.5,
+    equip: 0.7,
+    sMul: 0.8,
+    cost: 3,
+    salvage: 2,
     desc: 'Collects oxidiser. Works only inside the oxidiser layer.',
   },
   refinery: {
     name: 'Refinery',
-    key: '7',
+    key: '8',
     group: 'industry',
     fill: 0.6,
     equip: 1.2,
     sMul: 0.9,
-    cost: 6,
+    cost: 4,
     salvage: 3,
     heat: 0.6,
     desc: 'Turns 1 fuel + 1 oxidiser into 1 propellant.',
   },
   pad: {
     name: 'Launch Pad',
-    key: '8',
+    key: '9',
     group: 'rocket',
     fill: 1,
     equip: 0.4,
     sMul: 1.2,
-    cost: 6,
+    cost: 4,
     salvage: 1,
     desc: 'Engines must stand on one.',
   },
   engine: {
     name: 'Engine',
-    key: '9',
+    key: '0',
     group: 'rocket',
     rocket: true,
     fill: 0.6,
     equip: 1.5,
     sMul: 1,
-    cost: 5,
+    cost: 4,
     salvage: 3,
     desc: '110 kN of thrust, burning 1 propellant a second. Stands on a Launch Pad.',
   },
   tank: {
     name: 'Tank',
-    key: '0',
+    key: 't',
     group: 'rocket',
     rocket: true,
     fill: 0.3,
     equip: 0,
     sMul: 0.6,
-    cost: 3,
+    cost: 2,
     salvage: 0,
     desc: 'Holds 8 propellant. Stacks on an engine or another tank.',
   },
@@ -169,13 +195,14 @@ export const FUNCS = {
     sMul: 1.6,
     cost: 0,
     salvage: 0,
-    desc: 'What is left of your lander. Grapples within 24 m. Lose it and the game is over.',
+    desc: 'What is left of your lander: the helm and the anchor winch. Lose it and the game is over.',
   },
 };
 
 export const BUILD_ORDER = [
   'frame',
   'hollow',
+  'stockpile',
   'crane',
   'smelter',
   'pump',

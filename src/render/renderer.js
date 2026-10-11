@@ -1,4 +1,5 @@
 import { VERT, FRAG } from './shaders.js';
+import { drawFigure, drawCarried, drawPileContents, drawLoadLine, drawRock, drawAnchor, stepFlares, drawFlares } from './crew.js';
 import { materialTile, functionIcon, toCss } from './textures.js';
 import { Particles } from './particles.js';
 import { FUNCS } from '../sim/config.js';
@@ -73,6 +74,7 @@ export class Renderer {
     this.lens = { on: 0, target: 0, x: 0, y: 0, r: 120 };
     this.flash = 0;
     this.popups = [];
+    this.flares = [];
     this.scale = 1;
     this.quality = 1;
     this.prevY = new WeakMap();
@@ -225,6 +227,10 @@ export class Renderer {
           }
           break;
         }
+        case 'flare':
+          this.flares.push({ x: f.x, y: f.y, vy: 24, t: 0 });
+          P.burst(f.x, f.y, 14, { speed: 3, life: 0.6, size: 0.08, color: [1, 0.5, 0.3], kind: 'glow', drag: 2, heat: 1 });
+          break;
         case 'popup':
           this.popups.push({ x: f.x, y: f.y, text: f.text, t: 0, color: f.color || '#ffe4a8', life: f.life || 1.6 });
           break;
@@ -320,6 +326,16 @@ export class Renderer {
         }
       }
     }
+    if (game.colony && game.colonists)
+      for (const c of game.colonists.list) {
+        const j = c.job;
+        if (!j || j.type !== 'row' || j.phase !== 'rowing' || Math.random() > dt * 9) continue;
+        const a = -1.05 + (j.stroke ?? 0.5) * 0.75;
+        const tip = game.colony.body.getWorldPoint({ x: c.x + c.face * (0.18 + Math.cos(a) * 1.9), y: c.y + 0.7 + Math.sin(a) * 1.9 });
+        const sy = game.sea.surfaceY(tip.x, t);
+        const lc = game.sea.layers[3].color.map((v) => Math.min(1, v * 1.6 + 0.3));
+        P.burst(tip.x, sy, 3, { angle: Math.PI / 2 - c.face * 0.6, spread: 0.8, speed: 1.6, life: 0.6, size: 0.05, color: lc, kind: 'drop' });
+      }
     for (const c of game.flotsam.chunks) {
       if (c.fizz > 0.2 && Math.random() < dt * 8 && c.body) {
         const p = c.body.getPosition();
@@ -418,8 +434,10 @@ export class Renderer {
         ctx.lineTo(b.gx, b.gy + 0.58);
         ctx.stroke();
       }
+      if (fn === 'stockpile') drawPileContents(ctx, this, b);
       if (popped) ctx.restore();
     }
+    if (s === game.colony) drawLoadLine(ctx, s);
     // outline of the whole structure
     ctx.lineWidth = 0.045;
     ctx.strokeStyle = 'rgba(8,8,12,0.65)';
@@ -463,6 +481,27 @@ export class Renderer {
     }
     ctx.stroke();
     this.drawCracks(ctx, s, t);
+  }
+
+  drawCrew(ctx, game) {
+    const col = game.colony;
+    this.bodyTransform(ctx, col.body, 1);
+    for (const c of game.colonists.list) {
+      const j = c.job;
+      drawFigure(ctx, c.x, c.y, { face: c.face, suit: c.suit, pose: c.pose, walkT: c.walkT, t: game.time + c.id, stroke: j && j.type === 'row' ? j.stroke : 0.5 });
+      if (c.carry) drawCarried(ctx, this, c.x, c.y, c.carry);
+    }
+  }
+
+  drawCastaways(ctx, game) {
+    this.worldTransform(ctx, 1);
+    const cx = game.colony ? game.colony.body.getWorldCenter().x : 0;
+    for (const cw of game.world.castaways) {
+      if (cw.state === 'rescued') continue;
+      const face = cx > cw.x ? 1 : -1;
+      const pose = cw.state === 'hooked' ? 'swim' : cw.wave > 0 ? 'wave' : 'stand';
+      drawFigure(ctx, cw.x, cw.y, { face, suit: [0.85, 0.85, 0.82], pose, t: game.time + cw.id * 3 });
+    }
   }
 
   drawCracks(ctx, s, t) {
@@ -562,6 +601,23 @@ export class Renderer {
     ctx.lineWidth = 0.05;
     ctx.strokeStyle = 'rgba(10,8,14,0.7)';
     ctx.stroke();
+    if (c.crate) {
+      const w = c.pts[1][0],
+        h = c.pts[2][1];
+      ctx.strokeStyle = 'rgba(40,36,30,0.75)';
+      ctx.lineWidth = 0.07;
+      ctx.beginPath();
+      ctx.moveTo(-w * 0.45, -h);
+      ctx.lineTo(-w * 0.45, h);
+      ctx.moveTo(w * 0.45, -h);
+      ctx.lineTo(w * 0.45, h);
+      ctx.moveTo(-w, -h * 0.1);
+      ctx.lineTo(w, -h * 0.1);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,190,80,0.85)';
+      ctx.fillRect(-0.12, h * 0.25, 0.24, 0.16);
+      return;
+    }
     ctx.strokeStyle = 'rgba(255,255,255,0.18)';
     ctx.lineWidth = 0.035;
     ctx.beginPath();
@@ -785,6 +841,7 @@ export class Renderer {
     this.splashes(game, dt);
     this.ambient(game, dt);
     this.particles.update(dt, game);
+    stepFlares(this, dt);
     if (this.shocks) {
       for (const s of this.shocks) s.t += dt;
       this.shocks = this.shocks.filter((s) => s.t < 0.8);
@@ -795,18 +852,37 @@ export class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.W, this.H);
     ctx.imageSmoothingEnabled = true;
+    const W = game.world;
+    if (W) {
+      this.worldTransform(ctx, 1);
+      for (const r of W.rocks) drawRock(ctx, r, false);
+      for (const isl of W.islands) if (isl.pts) this.drawChunk(ctx, isl, false);
+    }
     for (const c of game.flotsam.chunks) this.drawChunk(ctx, c, false);
     for (const s of game.structures) if (s !== game.colony) this.drawStructure(ctx, s, game);
-    if (game.colony) this.drawStructure(ctx, game.colony, game);
+    if (game.colony) {
+      this.worldTransform(ctx, 1);
+      drawAnchor(ctx, game);
+      this.drawStructure(ctx, game.colony, game);
+      this.drawCrew(ctx, game);
+    }
+    if (W) this.drawCastaways(ctx, game);
     this.drawGrapples(ctx, game);
     this.drawParticles(ctx, false);
     this.drawFlames(ctx, game);
+    this.worldTransform(ctx, 1);
+    drawFlares(ctx, this);
 
     const dctx = this.denCtx;
     dctx.setTransform(1, 0, 0, 1, 0, 0);
     dctx.globalCompositeOperation = 'source-over';
     dctx.fillStyle = '#000';
     dctx.fillRect(0, 0, this.denCanvas.width, this.denCanvas.height);
+    if (W) {
+      this.worldTransform(dctx, 0.5);
+      for (const r of W.rocks) drawRock(dctx, r, true);
+      for (const isl of W.islands) if (isl.pts) this.drawChunk(dctx, isl, true);
+    }
     for (const c of game.flotsam.chunks) this.drawChunk(dctx, c, true);
     for (const s of game.structures) this.drawStructureDensity(dctx, s);
     this.drawHeat(dctx, game);

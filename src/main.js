@@ -163,8 +163,8 @@ class App {
     this.ui.bind(g);
     const cam = this.renderer.cam;
     cam.x = 0;
-    cam.y = 1;
-    cam.zoom = Math.max(18, Math.min(32, window.innerHeight / 36));
+    cam.y = 2.5;
+    cam.zoom = Math.max(30, Math.min(56, window.innerHeight / 17));
     this.mode = 'play';
     this.paused = false;
     this.setSpeed(1);
@@ -284,7 +284,7 @@ class App {
         const cam = this.renderer.cam;
         const before = this.renderer.toWorld(e.clientX, e.clientY);
         const k = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0016));
-        cam.zoom = Math.max(5, Math.min(70, cam.zoom * k));
+        cam.zoom = Math.max(5, Math.min(110, cam.zoom * k));
         const after = this.renderer.toWorld(e.clientX, e.clientY);
         cam.x += before.x - after.x;
         cam.y += before.y - after.y;
@@ -334,6 +334,7 @@ class App {
       else {
         ui.setTool('select');
         ui.closeModule();
+        ui.selectCrew(null);
       }
       return;
     }
@@ -457,13 +458,17 @@ class App {
         const p = g.rocket.struct.body.getWorldCenter();
         cam.x += (p.x - cam.x) * Math.min(1, dt * 4);
         cam.y += (p.y - 2 - cam.y) * Math.min(1, dt * 4);
+      } else if (g.rowDir && g.colony && !this.dragging && !this.keys.size) {
+        // keep the raft in view while it's under way
+        const p = g.colony.body.getWorldCenter();
+        cam.x += (p.x + g.rowDir * 6 - cam.x) * Math.min(1, dt * 1.5);
       } else if (this.camTarget) {
         cam.x += (this.camTarget.x - cam.x) * Math.min(1, dt * 5);
         cam.y += (this.camTarget.y - cam.y) * Math.min(1, dt * 5);
         if (Math.hypot(this.camTarget.x - cam.x, this.camTarget.y - cam.y) < 0.05) this.camTarget = null;
       }
       cam.y = Math.max(g.planet.floor + 6, Math.min(g.state === 'won' ? 420 : 320, cam.y));
-      cam.x = Math.max(-170, Math.min(170, cam.x));
+      cam.x = Math.max(-700, Math.min(700, cam.x));
       R.lens.target = this.lensHeld || this.ui.lensLatched ? 1 : 0;
       R.lens.r = Math.min(170, window.innerHeight * 0.17);
       this.ui.update(dt);

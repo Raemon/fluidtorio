@@ -440,7 +440,8 @@ body.journal-open #dock {
 #mat-chips::-webkit-scrollbar {
   display: none;
 }
-#resources:empty {
+#resources:empty,
+#gauge:empty {
   display: none;
 }
 .chip {

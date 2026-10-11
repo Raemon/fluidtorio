@@ -94,11 +94,29 @@ export class Physics {
     this.floorBody.setUserData({ kind: 'floor' });
     this.bodies = new Set();
     this.impacts = [];
+    this.dt = 1 / 60;
     this.world.on('post-solve', (contact, impulse) => {
       const ni = impulse.normalImpulses;
+      const fa = contact.getFixtureA(),
+        fb = contact.getFixtureB();
+      // cargo resting on a block presses on that block: the stress solver needs to know
+      const da = fa.getUserData(),
+        db = fb.getUserData();
+      const blk = da && da.owner && db && db.chunk ? da.owner : db && db.owner && da && da.chunk ? db.owner : null;
+      if (blk) {
+        const n = contact.getManifold().pointCount;
+        let J = 0;
+        for (let i = 0; i < n; i++) J += ni[i] || 0;
+        if (J > 0) {
+          const wm = contact.getWorldManifold(null);
+          const sign = blk === (da && da.owner) ? -1 : 1;
+          blk.ex += (sign * wm.normal.x * J) / this.dt;
+          blk.ey += (sign * wm.normal.y * J) / this.dt;
+        }
+      }
       const j = Math.max(ni[0] || 0, ni[1] || 0);
       if (j < 4) return;
-      this.impacts.push({ a: contact.getFixtureA(), b: contact.getFixtureB(), j });
+      this.impacts.push({ a: fa, b: fb, j });
     });
   }
 
@@ -125,6 +143,7 @@ export class Physics {
   }
 
   step(dt, t) {
+    this.dt = dt;
     for (const body of this.bodies) this.applyFluid(body, t);
     this.world.step(dt, 8, 3);
   }

@@ -23,6 +23,7 @@ export function blockMass(b) {
   let m = b.mat.d * fn.fill * (1 + SWELL_GAIN * b.swell) + fn.equip;
   if (b.flooded) m += (b.floodRho || 1) * (1 - fn.fill) * 0.85;
   if (b.fuel) m += b.fuel * PROPELLANT_MASS;
+  if (b.cargoMass) m += b.cargoMass;
   return m;
 }
 

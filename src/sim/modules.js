@@ -106,7 +106,7 @@ export class Modules {
         g.log(`New alloy: ${alloy.name}. Its properties are unknown.`, 'good', alloy);
       }
       g.knowledge.pairResult(ma, mb, outcome, null);
-      g.addStock(alloy.id, 4);
+      g.addStock(alloy.id, 4, b.struct ? b.struct.worldPos(b.gx, b.gy + 1) : null);
       g.stats.alloys += 4;
     }
   }

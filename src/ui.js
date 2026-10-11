@@ -1,17 +1,18 @@
-import { FUNCS, GRAPPLE_REACH_CRANE, GRAPPLE_REACH_CORE, ESCAPE_SPEED } from './sim/config.js';
+import { FUNCS, GRAPPLE_REACH_CRANE, CAST_REACH, ESCAPE_SPEED } from './sim/config.js';
 import { DROP_COST } from './sim/experiments.js';
 import { allMaterials, materialById } from './sim/gen.js';
 import { iconDataURL, swatchDataURL, toCss } from './render/textures.js';
 import { predictJoints, classify, colonyStatus, predictRocket, ghostFluid } from './sim/predict.js';
 import { brittleWord, D_PRIOR, S_PRIOR } from './sim/knowledge.js';
 import { pl } from './sim/physics.js';
+import { keyOf } from './sim/structure.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 /** Palette groups, in the order they tend to become available. */
 const GROUPS = [
-  ['frame', 'hollow'],
+  ['stockpile', 'frame', 'hollow'],
   ['crane', 'smelter'],
   ['pump', 'condenser', 'refinery'],
   ['pad', 'engine', 'tank', 'capsule'],
@@ -54,6 +55,12 @@ const TIPS = {
   'mp-jettison': ['Jettison', 'J', 'Cut it loose. Where it settles, and how deep it floats, tells you its density.'],
   'mp-dismantle': ['Dismantle', 'right-click', 'Take it apart and get 75% back.'],
   'mp-auto': ['Auto-haul', '', 'Let this crane grab whatever drifts into reach.'],
+  'crew-auto': ['Fish by themselves', '', 'They’ll cast at whatever floats within reach whenever there’s nothing more pressing to do.'],
+  'mp-stow': ['Stow', '', 'Someone carries it to a stockpile with room.'],
+  'mp-throw': ['Throw overboard', '', 'Someone carries it to the edge and heaves it out. Lighter raft; and you can watch where it ends up.'],
+  'mp-row': ['Row', '', 'Hauls up the anchor; anyone not busy goes to the edge and rows. A heavy raft rows slow.'],
+  'mp-stop': ['Stop rowing', '', 'The raft drifts with the current until the anchor is down.'],
+  'mp-anchor': ['Anchor', '', 'Down, the chain holds you where you are. Up, you drift.'],
   heel: ['Heel', '', 'How far the colony leans. Top-heavy builds lean more. Past about 25° it can capsize.'],
   damage: ['Worst joint', '', 'Damage on the most worn joint. Patch it, or take load off before it snaps.'],
   smelt: ['Smelt', '3 + 3 → 4', 'Sets an idle Smelter to this pair. Untested pairs can explode: keep that Smelter away from the core.'],
@@ -561,6 +568,7 @@ export class UI {
       h += `<button class="chip ${sel && building ? 'active' : ''} ${fresh}" data-mat="${m.id}" data-tip="mat:${m.id}"><img src="${this.swatch(m)}" alt="">${sel ? `<span class="cname">${esc(m.name)}</span>` : ''}<span class="ccount">${g.stockOf(m.id)}</span></button>`;
     }
     const chipsEl = $('mat-chips');
+    chipsEl.classList.toggle('hidden', !building);
     if (chipsEl._h !== h) {
       chipsEl.innerHTML = h;
       chipsEl._h = h;
@@ -730,14 +738,10 @@ export class UI {
     const g = this.game;
     const st = colonyStatus(g);
     if (!st) return;
-    const deg = (st.heel * 180) / Math.PI;
-    const heelCls = Math.abs(deg) > 25 ? 'bad' : Math.abs(deg) > 10 ? 'warn' : '';
-    const resCls = st.reserve < 1 ? 'bad' : st.reserve < 3 ? 'warn' : '';
+    // lift and heel are on the hull now (the load line, and the tilt you can see); only damage needs saying
     let worst = 0;
     if (g.colony) for (const b of g.colony.list) for (const d of [0, 1]) if (b.edges[d]) worst = Math.max(worst, b.edges[d].damage);
-    let h = `<div class="g-item" data-tip="lift"><span class="g-label">LIFT</span><div class="lift-bar ${resCls}"><i style="width:${Math.max(2, Math.min(100, (st.reserve / 10) * 100)).toFixed(0)}%"></i></div><span class="g-val ${resCls}">${st.reserve.toFixed(1)} t</span></div>`;
-    h += `<div class="g-item" data-tip="heel"><svg class="heel-icon ${heelCls}" viewBox="0 0 22 22" style="transform:rotate(${(-Math.max(-60, Math.min(60, deg))).toFixed(0)}deg)"><path d="M2 12h18l-3.5 5h-11z"/><path d="M11 12V3.5" stroke-width="1.8"/><path d="M11 4.5l5 5h-5z" class="sail"/></svg><span class="g-val ${heelCls}">${Math.abs(deg).toFixed(0)}°</span></div>`;
-    if (worst > 0.05) h += `<div class="g-item" data-tip="damage"><span class="g-label">JOINT</span><span class="g-val ${worst > 0.5 ? 'bad' : 'warn'}">${Math.round(worst * 100)}%</span></div>`;
+    const h = worst > 0.25 ? `<div class="g-item" data-tip="damage"><span class="g-label">JOINT</span><span class="g-val ${worst > 0.5 ? 'bad' : 'warn'}">${Math.round(worst * 100)}%</span></div>` : '';
     const el = $('gauge');
     if (el._h !== h) {
       el.innerHTML = h;
@@ -822,7 +826,7 @@ export class UI {
     }
     if (kind === 'tool' && a === 'repair') return tip('Patch', 'R', 'Click a cracked block to restore its joints. 1 unit of its material each.');
     if (kind === 'tool' && a === 'drop')
-      return tip(`Drop a test cube · ${esc(this.mat.name)}`, 'G', 'Lower a solid cube into the sea. Where it settles, how deep it floats and what it does on the way down all go in the notebook.', `${DROP_COST} ${esc(this.mat.name)} · grapple it back for some of that`);
+      return tip(`Throw a test cube · ${esc(this.mat.name)}`, 'G', 'Someone cuts a solid cube from your stores and heaves it into the sea. Watch where it ends up.', `${DROP_COST} ${esc(this.mat.name)} · fish it back for some of that`);
     if (kind === 'd' || kind === 's') {
       const m = materialById(g.planet, a);
       const k = g.knowledge.get(m);
@@ -897,6 +901,16 @@ export class UI {
 
   pick(wx, wy) {
     const g = this.game;
+    const col = g.colony;
+    if (col)
+      for (const c of g.colonists.list) {
+        const lp = col.localPos(wx, wy);
+        if (Math.abs(lp.x - c.x) < 0.38 && lp.y > c.y - 0.1 && lp.y < c.y + 1.15) return { kind: 'colonist', ref: c };
+      }
+    for (const cw of g.world.castaways) {
+      if (cw.state === 'rescued') continue;
+      if (Math.abs(wx - cw.x) < 0.5 && wy > cw.y - 0.3 && wy < cw.y + 1.2) return { kind: 'castaway', ref: cw };
+    }
     for (const c of g.flotsam.chunks) {
       if (!c.body) continue;
       const lp = c.body.getLocalPoint(new pl.Vec2(wx, wy));
@@ -908,13 +922,23 @@ export class UI {
           [xj, yj] = pts[j];
         if (yi > lp.y !== yj > lp.y && lp.x < ((xj - xi) * (lp.y - yi)) / (yj - yi) + xi) inside = !inside;
       }
-      if (inside || Math.hypot(lp.x, lp.y) < 0.45) return { kind: 'chunk', ref: c };
+      if (inside || Math.hypot(lp.x, lp.y) < 0.45) return { kind: c.aboard ? 'item' : 'chunk', ref: c };
     }
     for (const s of g.structures) {
       const lp = s.localPos(wx, wy);
       const b = s.at(Math.round(lp.x), Math.round(lp.y));
-      if (b) return { kind: s === g.colony ? 'block' : s.kind === 'rocket' ? 'rocket' : 'wreck', ref: b, struct: s };
+      if (b) return { kind: s === col ? 'block' : s.kind === 'rocket' ? 'rocket' : s.kind === 'island' ? 'island' : 'wreck', ref: b, struct: s };
+      if (s === col) {
+        const plan = g.construction.at(Math.round(lp.x), Math.round(lp.y));
+        if (plan) return { kind: 'plan', ref: plan };
+      }
     }
+    for (const isl of g.world.islands) {
+      if (!isl.pts) continue;
+      const lp = isl.body.getLocalPoint(new pl.Vec2(wx, wy));
+      if (Math.abs(lp.x) < 4.8 && Math.abs(lp.y) < 1.8) return { kind: 'island', ref: isl };
+    }
+    for (const r of g.world.rocks) if (Math.abs(wx - r.x) < 4.5 && wy < 5 && wy > g.planet.floor) return { kind: 'island', ref: r };
     return null;
   }
 
@@ -965,7 +989,7 @@ export class UI {
     if (this.tool === 'drop' && this.dropGhost) {
       const d = this.dropGhost;
       h = `<div class="tt-title">Test cube · ${esc(this.mat.name)}<span class="tt-key">${DROP_COST} units</span></div>`;
-      h += d.ok ? `<div class="tt-dim">${esc(d.where)}</div><div class="tt-act">Click to drop it</div>` : `<div class="fail">${esc(d.reason || 'Can’t drop it there.')}</div>`;
+      h += d.ok ? `<div class="tt-dim">${esc(d.where)}</div><div class="tt-act">Click to throw it here</div>` : `<div class="fail">${esc(d.reason || 'Can’t throw it there.')}</div>`;
     } else if (this.tool === 'build' && this.ghost) {
       const gh = this.ghost;
       const f = FUNCS[this.fn];
@@ -998,15 +1022,38 @@ export class UI {
       }
       if (c.fizz > 0.2) h += `<div class="fail">Reacting with the fluid!</div>`;
       const reach = this.reachFor(p);
-      h += reach.ok ? `<div class="tt-act">Click to haul in</div>` : `<div class="tt-dim">Out of reach (${reach.d.toFixed(0)} m)</div>`;
+      h += reach.ok ? `<div class="tt-act">Click to fish it in</div>` : `<div class="tt-dim">Out of reach: ${reach.d.toFixed(0)} m from where anyone could cast</div>`;
+    } else if (hv && hv.kind === 'colonist') {
+      const c = hv.ref;
+      h = `<div class="tt-title">${esc(c.name)}</div><div class="tt-dim">${this.activity(c)}</div><div class="tt-act">Click to give orders</div>`;
+    } else if (hv && hv.kind === 'castaway') {
+      const cw = hv.ref;
+      const reach = this.reachFor({ x: cw.x, y: cw.y + 0.5 });
+      h = `<div class="tt-title">${esc(cw.name)}<span class="tt-key">castaway</span></div>`;
+      h += cw.state === 'hooked' ? `<div class="tt-dim">Swimming for the raft.</div>` : reach.ok ? `<div class="tt-act">Click to throw them a line</div>` : `<div class="tt-dim">Too far for a line: ${reach.d.toFixed(0)} m. Row closer.</div>`;
+    } else if (hv && hv.kind === 'item' && !(this.selected && this.selected.item === hv.ref)) {
+      const c = hv.ref;
+      const kind = c.crate ? 'crate' : c.debris ? 'wreckage' : 'chunk';
+      h = `<div class="tt-title">${esc(c.mat.name)} ${kind}<span class="tt-key">${c.units} units</span></div><div class="tt-dim">Loose on deck${c.claimed ? `: ${esc(c.claimed.name)} is on it` : ''}.</div><div class="tt-act">Click for options</div>`;
+    } else if (hv && hv.kind === 'plan') {
+      const plan = hv.ref;
+      const parts = [...plan.needs].map(([id, n]) => `${plan.got.get(id) || 0}/${n} ${esc(materialById(g.planet, id).name)}`).join(' · ');
+      h = `<div class="tt-title">${FUNCS[plan.fn].name} · ${esc(plan.mat.name)}<span class="tt-key">planned</span></div><div class="tt-dim">${parts}</div><div class="tt-act">Right-click to cancel</div>`;
+    } else if (hv && hv.kind === 'island') {
+      const site = hv.ref.site || (hv.struct && g.world.islands.find((i) => i.struct === hv.struct)?.site);
+      h = `<div class="tt-title">${site ? esc(site.name[0].toUpperCase() + site.name.slice(1)) : 'An island'}</div><div class="tt-dim">${hv.ref.body && hv.ref.body.getType && hv.ref.body.getType() === 'static' ? 'Rooted to the sea floor. It doesn’t float, and it doesn’t move.' : 'Floating, held by a sea anchor.'}</div>`;
     } else if (hv && (hv.kind === 'block' || hv.kind === 'rocket') && hv.ref !== this.selected) {
       const b = hv.ref;
       const f = FUNCS[b.fn];
       h = `<div class="tt-title">${f.name}${f.fixedMat ? '' : ` · ${esc(b.mat.name)}`}</div>`;
       const st = b.state;
+      if (b.fn === 'core') h += `<div class="tt-dim">${g.anchored ? 'At anchor' : g.rowDir ? 'Under way' : 'Drifting'} · click for the helm</div>`;
+      if (b.fn === 'stockpile') {
+        const list = b.state.contents || [];
+        h += `<div class="tt-dim">${list.length ? list.map((it) => `${it.units} ${esc(it.mat.name)}`).join(' · ') : 'Empty'} (${list.reduce((a, it) => a + it.units, 0)}/${f.capacity})</div>`;
+      }
       if (b.fn === 'pump' || b.fn === 'condenser') h += st.active ? `<div class="safe">Working</div>` : `<div class="risk">Idle: must sit inside ${esc(b.fn === 'pump' ? L[5].name : L[0].name)}</div>`;
       else if (b.fn === 'smelter') h += `<div class="tt-dim">${st.recipe ? st.recipe.map((id) => materialById(g.planet, id).name).join(' + ') : 'No recipe'}</div>`;
-      else if (b.fn === 'core') h += `<div class="tt-dim">${esc(f.desc)}</div>`;
       else if (b.layer >= 0 && b.layer <= 5) h += `<div class="tt-dim">In ${esc(L[b.layer].name)}</div>`;
       let dmg = 0,
         load = 0;
@@ -1050,15 +1097,24 @@ export class UI {
     tt.style.top = `${Math.min(window.innerHeight - r.height - 8, this.mouse.y + 16)}px`;
   }
 
+  /** How close could anyone get to this point: a colonist casting from where they could stand, or a crane. */
   reachFor(p) {
     const g = this.game;
+    const crew = g.colonists;
     let best = { ok: false, d: Infinity };
-    for (const o of g.grapples.owners()) {
+    if (crew.list.length)
+      for (const n of crew.nodes.values()) {
+        if (!n.stand) continue;
+        const w = crew.nodeWorld(n);
+        const d = Math.hypot(p.x - w.x, p.y - w.y);
+        const ok = d <= CAST_REACH;
+        if ((ok && (!best.ok || d < best.d)) || (!best.ok && d < best.d)) best = { ok, d, op: w, reach: CAST_REACH };
+      }
+    for (const o of g.grapples.cranes()) {
       const op = g.grapples.ownerPos(o);
       const d = Math.hypot(p.x - op.x, p.y - op.y);
-      const reach = g.grapples.reachOf(o);
-      if (d <= reach && (!best.ok || d < best.d)) best = { ok: true, d, owner: o, op, reach };
-      else if (!best.ok && d < best.d) best = { ok: false, d, owner: o, op, reach };
+      const ok = d <= GRAPPLE_REACH_CRANE;
+      if ((ok && (!best.ok || d < best.d)) || (!best.ok && d < best.d)) best = { ok, d, op, reach: GRAPPLE_REACH_CRANE };
     }
     return best;
   }
@@ -1078,10 +1134,10 @@ export class UI {
     this.dropGhost = null;
     if (this.tool === 'drop' && this.mouse.in && !this.tipEl && g.colony) {
       const w = this.R.toWorld(this.mouse.x, this.mouse.y);
-      const chk = g.experiments.canDrop(this.mat, w.x, w.y);
+      const chk = g.experiments.canThrow(this.mat, w.x, w.y);
       const k = g.sea.layerAt(w.x, w.y, g.time);
       const L = g.planet.layers;
-      this.dropGhost = { x: w.x, y: w.y, ok: chk.ok, reason: chk.reason, where: k <= 2 ? 'Dropped from the air' : `Lowered into ${L[Math.min(5, k)].name}` };
+      this.dropGhost = { x: w.x, y: w.y, ok: chk.ok, reason: chk.reason, where: k <= 2 ? 'Into the air, to fall where it will' : `Into ${L[Math.min(5, k)].name}` };
     }
     if (this.tool !== 'build' || !this.mouse.in || !g.colony || this.tipEl) {
       this.ghost = null;
@@ -1160,10 +1216,16 @@ export class UI {
       return;
     }
     const w = this.R.toWorld(sx, sy);
+    const crew = g.colonists;
     if (this.tool === 'drop') {
       if (drag) return;
-      const r = g.experiments.drop(this.mat, w.x, w.y);
-      if (!r.ok && r.reason) g.log(r.reason, 'warn');
+      const chk = g.experiments.canThrow(this.mat, w.x, w.y);
+      if (!chk.ok) {
+        if (chk.reason) g.log(chk.reason, 'warn');
+        return;
+      }
+      const who = crew.pick(w.x, w.y, this.crewSel);
+      if (who) crew.order(who, { type: 'throw', cube: this.mat, target: { x: w.x, y: w.y } });
       return;
     }
     const hv = this.pick(w.x, w.y);
@@ -1181,18 +1243,44 @@ export class UI {
       return;
     }
     if (!hv) {
+      // with someone selected, clicking the colony sends them there
+      const sel = this.crewSel;
+      if (sel && g.colony) {
+        const lp = g.colony.localPos(w.x, w.y);
+        const cell = { x: Math.round(lp.x), y: Math.round(lp.y + 0.3) };
+        if (crew.node(cell.x, cell.y)) {
+          crew.order(sel, { type: 'goto', cell });
+          return;
+        }
+      }
       this.closeModule();
+      this.selectCrew(null);
       return;
     }
-    if (hv.kind === 'chunk') {
-      const r = g.grapples.fire({ kind: 'chunk', ref: hv.ref });
-      if (!r.ok) g.log(r.reason, 'warn');
-    } else if (hv.kind === 'wreck') {
-      const r = g.grapples.fire({ kind: 'wreck', ref: hv.struct });
-      if (!r.ok) g.log(r.reason, 'warn');
+    if (hv.kind === 'colonist') {
+      this.selectCrew(hv.ref);
+      this.openModule({ crew: hv.ref });
+    } else if (hv.kind === 'chunk' || hv.kind === 'castaway' || hv.kind === 'wreck') {
+      const target = hv.kind === 'wreck' ? { kind: 'wreck', ref: hv.struct } : { kind: hv.kind, ref: hv.ref };
+      if (g.grapples.hooked(target.ref)) return;
+      const p = g.grapples.targetPos(target);
+      const who = crew.pick(p.x, p.y, this.crewSel);
+      if (!who) return;
+      if (target.kind === 'chunk') target.ref.claimed = who;
+      crew.order(who, { type: 'fish', target, manual: true });
+      this.app.click();
+    } else if (hv.kind === 'item') {
+      this.openModule({ item: hv.ref });
     } else if (hv.kind === 'block') {
       this.openModule(hv.ref);
+    } else if (hv.kind === 'plan') {
+      this.openModule({ plan: hv.ref });
     }
+  }
+
+  selectCrew(c) {
+    this.crewSel = c;
+    if (!c && this.selected && this.selected.crew) this.closeModule();
   }
 
   secondaryAt(sx, sy) {
@@ -1203,6 +1291,11 @@ export class UI {
       g.deconstruct(hv.ref);
       return;
     }
+    if (hv && hv.kind === 'plan') {
+      g.construction.cancel(hv.ref);
+      return;
+    }
+    if (this.crewSel) this.selectCrew(null);
     if (this.tool !== 'select') this.setTool('select');
   }
 
@@ -1224,12 +1317,84 @@ export class UI {
   }
 
   renderModule() {
+    const sel = this.selected;
+    if (!sel) return;
+    const h = sel.crew ? this.crewPanel(sel.crew) : sel.item ? this.itemPanel(sel.item) : sel.plan ? this.planPanel(sel.plan) : this.blockPanel(sel);
+    const el = $('module-panel');
+    if (el._h !== h) {
+      el.innerHTML = h;
+      el._h = h;
+    }
+  }
+
+  activity(c) {
+    const j = c.job;
+    if (!j) return 'Taking a breather.';
+    switch (j.type) {
+      case 'fish':
+        return j.target.kind === 'castaway' ? `Throwing ${j.target.ref.name} a line.` : 'Fishing.';
+      case 'store':
+        return 'Stowing cargo.';
+      case 'build':
+        return `${j.phase === 'work' ? 'Building' : 'Fetching material for'} a ${FUNCS[j.plan.fn].name}.`;
+      case 'row':
+        return 'Rowing.';
+      case 'throw':
+        return j.cube ? 'Throwing a test cube.' : 'Throwing cargo overboard.';
+      case 'goto':
+        return 'On the way.';
+      default:
+        return c.autoFish ? 'Watching for flotsam.' : 'Taking a breather.';
+    }
+  }
+
+  crewPanel(c) {
+    let h = `<button class="ib mp-close" data-close>×</button><h4>${esc(c.name)}</h4><div class="note-small">${this.activity(c)}</div>`;
+    h += `<button class="mp-btn ${c.autoFish ? 'on' : ''}" data-autofish data-tip="crew-auto">${c.autoFish ? 'Fishing by themselves' : 'Fish by themselves'}</button>`;
+    h += `<div class="note-small fine">Click anything floating to send ${esc(c.name)} after it, or a spot on the raft to send them there.</div>`;
+    return h;
+  }
+
+  itemPanel(ch) {
+    const kind = ch.crate ? 'crate' : ch.debris ? 'wreckage' : 'chunk';
+    let h = `<button class="ib mp-close" data-close>×</button><h4>${esc(ch.mat.name)} ${kind} <span class="tt-dim">· ${ch.units} units</span></h4>`;
+    h += `<div class="note-small">Loose on deck. Its weight is on the raft, wherever it lies.</div>`;
+    h += `<div class="mp-row"><button class="mp-btn" data-stow data-tip="mp-stow">Stow</button><button class="mp-btn" data-throw data-tip="mp-throw">Throw overboard</button></div>`;
+    return h;
+  }
+
+  planPanel(plan) {
     const g = this.game;
-    const b = this.selected;
-    if (!b) return;
+    const f = FUNCS[plan.fn];
+    const parts = [...plan.needs].map(([id, n]) => `${plan.got.get(id) || 0}/${n} ${esc(materialById(g.planet, id).name)}`).join(' · ');
+    let h = `<button class="ib mp-close" data-close>×</button><h4>${f.name}${f.fixedMat ? '' : ` <span class="tt-dim">· ${esc(plan.mat.name)}</span>`} <span class="tt-dim">(planned)</span></h4>`;
+    h += `<div class="note-small">${parts}</div>`;
+    const short = [...plan.needs].filter(([id, n]) => g.cargo.unitsOf(id, true) + (plan.got.get(id) || 0) + (plan.coming.get(id) || 0) < n);
+    if (short.length) h += `<div class="note-small risk">Not enough ${short.map(([id]) => esc(materialById(g.planet, id).name)).join(' or ')} aboard yet.</div>`;
+    h += `<button class="mp-btn" data-cancelplan>Cancel plan</button>`;
+    return h;
+  }
+
+  blockPanel(b) {
+    const g = this.game;
     const f = FUNCS[b.fn];
     const L = g.planet.layers;
-    let h = `<button class="ib mp-close" data-close>×</button><h4>${f.name}${f.fixedMat ? '' : ` <span class="tt-dim">· ${esc(b.mat.name)}</span>`}</h4><div class="note-small">${esc(f.desc)}</div>`;
+    let h = `<button class="ib mp-close" data-close>×</button><h4>${f.name}${f.fixedMat ? '' : ` <span class="tt-dim">· ${esc(b.mat.name)}</span>`}</h4>`;
+    if (b.fn === 'core') {
+      const st = colonyStatus(g);
+      const deg = st ? Math.abs((st.heel * 180) / Math.PI) : 0;
+      const state = g.anchored ? 'At anchor.' : g.rowDir ? `Rowing ${g.rowDir > 0 ? 'east' : 'west'}.` : 'Drifting.';
+      h += `<div class="note-small">${state} Spare lift ${st ? st.reserve.toFixed(1) : '?'} t · heel ${deg.toFixed(0)}°</div>`;
+      h += `<div class="mp-row"><button class="mp-btn ${g.rowDir < 0 ? 'on' : ''}" data-row="-1" data-tip="mp-row">◀ West</button><button class="mp-btn" data-row="0" data-tip="mp-stop">Stop</button><button class="mp-btn ${g.rowDir > 0 ? 'on' : ''}" data-row="1" data-tip="mp-row">East ▶</button></div>`;
+      h += `<button class="mp-btn" data-anchor data-tip="mp-anchor">${g.anchored ? 'Raise anchor' : 'Drop anchor'}</button>`;
+      return h;
+    }
+    h += `<div class="note-small">${esc(f.desc)}</div>`;
+    if (b.fn === 'stockpile') {
+      const list = b.state.contents || [];
+      const used = list.reduce((a, it) => a + it.units, 0);
+      h += `<div class="note-small">${list.length ? list.map((it) => `${it.units} ${esc(it.mat.name)}`).join(' · ') : 'Empty.'} <span class="tt-dim">(${used}/${f.capacity})</span></div>`;
+    }
     if (b.fn === 'smelter') {
       const raws = g.planet.materials.filter((m) => g.knowledge.get(m).seen);
       const [ra, rb] = b.state.recipe || (this.pendingRecipe && this.pendingRecipe.block === b ? this.pendingRecipe.ids : ['', '']);
@@ -1246,41 +1411,98 @@ export class UI {
       const want = b.fn === 'pump' ? 5 : 0;
       h += `<div class="note-small ${b.state.active ? 'safe' : 'risk'}">${b.state.active ? 'Working.' : `Idle: it sits in ${esc(L[Math.min(5, Math.max(0, b.layer))].name)}, needs ${esc(L[want].name)}.`}</div>`;
     }
-    if (b.fn !== 'core') h += `<div class="mp-row"><button class="mp-btn" data-repair data-tip="mp-patch">Patch</button><button class="mp-btn" data-jettison data-tip="mp-jettison">Jettison</button><button class="mp-btn" data-dismantle data-tip="mp-dismantle">Dismantle</button></div>`;
-    $('module-panel').innerHTML = h;
+    h += `<div class="mp-row"><button class="mp-btn" data-repair data-tip="mp-patch">Patch</button><button class="mp-btn" data-jettison data-tip="mp-jettison">Jettison</button><button class="mp-btn" data-dismantle data-tip="mp-dismantle">Dismantle</button></div>`;
+    return h;
   }
 
+  /** Where the popover sits: beside whatever it's about, following it as it moves. */
   positionModulePanel() {
-    const b = this.selected;
+    const sel = this.selected;
     const el = $('module-panel');
-    if (!b) return;
-    if (!b.struct || b.struct !== this.game.colony) {
-      this.closeModule();
-      return;
+    if (!sel) return;
+    const g = this.game;
+    let p = null;
+    if (sel.crew) {
+      if (!g.colonists.list.includes(sel.crew)) return this.closeModule();
+      p = g.colonists.world(sel.crew, 0, 0.8);
+    } else if (sel.item) {
+      if (!sel.item.body || !sel.item.aboard) return this.closeModule();
+      p = sel.item.body.getPosition();
+    } else if (sel.plan) {
+      if (!g.construction.plans.has(keyOf(sel.plan.gx, sel.plan.gy)) || !g.colony) return this.closeModule();
+      p = g.colony.worldPos(sel.plan.gx, sel.plan.gy);
+    } else {
+      if (!sel.struct || sel.struct !== g.colony) return this.closeModule();
+      p = sel.struct.worldPos(sel.gx, sel.gy);
     }
-    const p = b.struct.worldPos(b.gx, b.gy);
     const s = this.R.toScreen(p.x, p.y);
     const r = el.getBoundingClientRect();
-    el.style.left = `${Math.max(8, Math.min(window.innerWidth - r.width - 8, s.x + 24))}px`;
+    el.style.left = `${Math.max(8, Math.min(window.innerWidth - r.width - 8, s.x + 28))}px`;
     el.style.top = `${Math.max(8, Math.min(window.innerHeight - r.height - 8, s.y - r.height / 2))}px`;
+    this.modT = (this.modT || 0) + 1;
+    if (this.modT % 15 === 0) this.renderModule();
   }
 
   onModuleClick(e) {
     const g = this.game;
-    const b = this.selected;
+    const sel = this.selected;
     const t = e.target.closest('button');
-    if (!t || !b) return;
-    if (t.dataset.close !== undefined) return this.closeModule();
-    if (t.dataset.auto !== undefined) b.state.auto = b.state.auto === false;
-    if (t.dataset.stopsmelt !== undefined) g.modules.setRecipe(b, null, null);
-    if (t.dataset.repair !== undefined && !g.repair(b)) g.log('Nothing to patch there.', 'info');
-    if (t.dataset.jettison !== undefined) {
-      g.jettison(b);
+    if (!t || !sel) return;
+    const crew = g.colonists;
+    if (t.dataset.close !== undefined) {
+      if (sel.crew) this.selectCrew(null);
       return this.closeModule();
     }
-    if (t.dataset.dismantle !== undefined) {
-      g.deconstruct(b);
-      return this.closeModule();
+    if (sel.crew) {
+      if (t.dataset.autofish !== undefined) sel.crew.autoFish = !sel.crew.autoFish;
+    } else if (sel.item) {
+      const it = sel.item;
+      if (t.dataset.stow !== undefined) {
+        if (!g.cargo.piles().some((p) => g.cargo.room(p) > 0)) g.log('No stockpile with room. Build one first.', 'warn');
+        else {
+          const p = it.body.getPosition();
+          const who = crew.pick(p.x, p.y, this.crewSel);
+          if (who) {
+            it.claimed = who;
+            crew.order(who, { type: 'store', item: it, phase: 'fetch-walk' });
+          }
+        }
+        this.closeModule();
+      }
+      if (t.dataset.throw !== undefined) {
+        const p = it.body.getPosition();
+        const cc = g.colony.body.getWorldCenter();
+        const side = p.x >= cc.x ? 1 : -1;
+        const b = g.colony.bounds();
+        const edge = g.colony.worldPos(side > 0 ? b.x1 : b.x0, 0);
+        const who = crew.pick(p.x, p.y, this.crewSel);
+        if (who) {
+          it.claimed = who;
+          crew.order(who, { type: 'throw', item: it, target: { x: edge.x + side * 5, y: g.sea.surfaceY(edge.x + side * 5, g.time) } });
+        }
+        this.closeModule();
+      }
+      return this.app.click();
+    } else if (sel.plan) {
+      if (t.dataset.cancelplan !== undefined) {
+        g.construction.cancel(sel.plan);
+        return this.closeModule();
+      }
+    } else {
+      const b = sel;
+      if (t.dataset.row !== undefined) g.setRow(+t.dataset.row);
+      if (t.dataset.anchor !== undefined) g.anchored ? g.raiseAnchor() : g.dropAnchor();
+      if (t.dataset.auto !== undefined) b.state.auto = b.state.auto === false;
+      if (t.dataset.stopsmelt !== undefined) g.modules.setRecipe(b, null, null);
+      if (t.dataset.repair !== undefined && !g.repair(b)) g.log('Nothing to patch there.', 'info');
+      if (t.dataset.jettison !== undefined) {
+        g.jettison(b);
+        return this.closeModule();
+      }
+      if (t.dataset.dismantle !== undefined) {
+        g.deconstruct(b);
+        return this.closeModule();
+      }
     }
     this.app.click();
     this.renderModule();
@@ -1323,24 +1545,83 @@ export class UI {
       reset();
     }
 
-    if (this.tool === 'select' && g.state === 'playing') {
-      const owners = g.grapples.owners().filter((o) => !g.grapples.busy(o));
-      if (owners.length) {
-        const ops = owners.map((o) => ({ o, p: g.grapples.ownerPos(o), r: g.grapples.reachOf(o) }));
-        const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 260);
-        for (const c of g.flotsam.chunks) {
-          if (c.grabbed || !c.body) continue;
-          const p = c.body.getPosition();
-          if (!ops.some((q) => Math.hypot(p.x - q.p.x, p.y - q.p.y) <= q.r)) continue;
-          const s = R.toScreen(p.x, p.y);
-          ctx.beginPath();
-          ctx.arc(s.x, s.y, z * 0.95 + 3 + pulse * 2, 0, Math.PI * 2);
-          ctx.strokeStyle = `rgba(255,220,150,${0.18 + 0.2 * pulse})`;
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
+    if (this.tool === 'select' && g.state === 'playing' && g.colonists.list.length) {
+      // a soft pulse on everything someone could cast to from the raft
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+      const cc = col ? col.body.getWorldCenter() : { x: 0 };
+      for (const c of g.flotsam.chunks) {
+        if (c.grabbed || c.aboard || !c.body) continue;
+        const p = c.body.getPosition();
+        if (Math.abs(p.x - cc.x) > 40 || !this.reachFor(p).ok) continue;
+        const s = R.toScreen(p.x, p.y);
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, z * 0.95 + 3 + pulse * 2, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255,220,150,${0.18 + 0.2 * pulse})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      for (const cw of g.world.castaways) {
+        if (cw.state !== 'waiting' || !this.reachFor({ x: cw.x, y: cw.y + 0.5 }).ok) continue;
+        const s = R.toScreen(cw.x, cw.y + 0.6);
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, z * 1.1 + 4 + pulse * 3, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(140,255,190,${0.3 + 0.3 * pulse})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
       }
     }
+
+    // plans: the ghost of each block-to-be, filling as material arrives
+    if (col)
+      for (const plan of g.construction.list()) {
+        tf(col.body);
+        let need = 0,
+          got = 0;
+        for (const [id, n] of plan.needs) {
+          need += n;
+          got += Math.min(n, plan.got.get(id) || 0);
+        }
+        const k = need ? got / need : 1;
+        ctx.globalAlpha = 0.28 + 0.3 * k;
+        ctx.drawImage(R.tile(plan.mat), plan.gx - 0.5, plan.gy - 0.5, 1, 1);
+        ctx.globalAlpha = 1;
+        ctx.setLineDash([0.16, 0.12]);
+        ctx.lineWidth = 1.6 / z;
+        ctx.strokeStyle = g.construction.ready(plan) ? 'rgba(255,240,200,0.9)' : 'rgba(255,240,200,0.45)';
+        ctx.strokeRect(plan.gx - 0.46, plan.gy - 0.46, 0.92, 0.92);
+        ctx.setLineDash([]);
+        if (k > 0 && k < 1) {
+          ctx.fillStyle = 'rgba(255,209,102,0.9)';
+          ctx.fillRect(plan.gx - 0.4, plan.gy - 0.42, 0.8 * k, 0.08);
+        }
+        if (plan.worker && plan.worker.job && plan.worker.job.phase === 'work') {
+          ctx.fillStyle = 'rgba(125,255,176,0.9)';
+          ctx.fillRect(plan.gx - 0.4, plan.gy - 0.42, 0.8 * Math.min(1, plan.worker.job.t / 1.1), 0.08);
+        }
+        reset();
+      }
+
+    // the selected crew member, and where they're headed
+    const sel = this.crewSel;
+    if (sel && col && g.colonists.list.includes(sel)) {
+      tf(col.body);
+      ctx.strokeStyle = 'rgba(140,255,190,0.95)';
+      ctx.lineWidth = 2 / z;
+      ctx.beginPath();
+      ctx.ellipse(sel.x, sel.y + 0.02, 0.38, 0.12, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      if (sel.path.length) {
+        ctx.fillStyle = 'rgba(140,255,190,0.6)';
+        for (const n of sel.path) {
+          ctx.beginPath();
+          ctx.arc(n.x, n.y - 0.45, 0.06, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      reset();
+    }
+
+    this.drawEdgeMarkers(ctx, R);
     const hv = this.hover;
     if (hv && hv.kind === 'chunk' && hv.ref.body) {
       tf(hv.ref.body);
@@ -1353,7 +1634,7 @@ export class UI {
       reset();
       const p = hv.ref.body.getPosition();
       const reach = this.reachFor(p);
-      if (reach.owner) {
+      if (reach.op) {
         const a = R.toScreen(reach.op.x, reach.op.y);
         ctx.beginPath();
         ctx.arc(a.x, a.y, reach.reach * z, 0, Math.PI * 2);
@@ -1401,15 +1682,6 @@ export class UI {
 
     const dg = this.dropGhost;
     if (dg && col && col.core) {
-      const cp = col.worldPos(col.core.gx, col.core.gy);
-      const a = R.toScreen(cp.x, cp.y);
-      ctx.beginPath();
-      ctx.arc(a.x, a.y, GRAPPLE_REACH_CORE * z, 0, Math.PI * 2);
-      ctx.setLineDash([4, 6]);
-      ctx.strokeStyle = 'rgba(255,220,140,0.25)';
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-      ctx.setLineDash([]);
       const s = R.toScreen(dg.x, dg.y);
       ctx.fillStyle = dg.ok ? 'rgba(255,255,255,0.14)' : 'rgba(255,80,80,0.16)';
       ctx.fillRect(s.x - z / 2, s.y - z / 2, z, z);
@@ -1496,6 +1768,47 @@ export class UI {
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
       ctx.fillText(`escape ${ESCAPE_SPEED} m/s`, x - 10, top + 4);
       ctx.fillText(`${g.rocket.altitude().toFixed(0)} m`, x - 10, bot + 18);
+    }
+  }
+
+  /** Off-screen things worth knowing about: a flare just fired, castaways you've heard from. */
+  drawEdgeMarkers(ctx, R) {
+    const g = this.game;
+    const W = R.cssW,
+      H = R.cssH;
+    const marks = [];
+    for (const f of R.flares) if (f.t < 9) marks.push({ x: f.x, y: f.y, color: '255,90,70', label: 'flare', a: Math.min(1, (9 - f.t) / 2) });
+    if (g.world.flareSeen)
+      for (const cw of g.world.castaways) if (cw.state === 'waiting' && cw.seen) marks.push({ x: cw.x, y: cw.y + 1, color: '140,255,190', label: cw.name, a: 0.8 });
+    const cc = g.colony ? g.colony.body.getWorldCenter() : { x: 0, y: 0 };
+    for (const m of marks) {
+      const s = R.toScreen(m.x, m.y);
+      if (s.x > 30 && s.x < W - 30 && s.y > 30 && s.y < H - 30) continue;
+      const cx = W / 2,
+        cy = H / 2;
+      const dx = s.x - cx,
+        dy = s.y - cy;
+      const k = Math.min((W / 2 - 40) / Math.max(1, Math.abs(dx)), (H / 2 - 70) / Math.max(1, Math.abs(dy)));
+      const ex = cx + dx * k,
+        ey = cy + dy * k;
+      const ang = Math.atan2(dy, dx);
+      ctx.save();
+      ctx.globalAlpha = m.a;
+      ctx.translate(ex, ey);
+      ctx.fillStyle = `rgba(${m.color},0.95)`;
+      ctx.rotate(ang);
+      ctx.beginPath();
+      ctx.moveTo(12, 0);
+      ctx.lineTo(-6, -7);
+      ctx.lineTo(-6, 7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.rotate(-ang);
+      ctx.font = '600 11px "Manrope", system-ui, sans-serif';
+      ctx.textAlign = dx > 0 ? 'right' : 'left';
+      ctx.fillStyle = `rgba(${m.color},0.95)`;
+      ctx.fillText(`${m.label} · ${Math.round(Math.abs(m.x - cc.x))} m`, dx > 0 ? -16 : 16, 4);
+      ctx.restore();
     }
   }
 

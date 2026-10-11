@@ -37,8 +37,8 @@ export class Sea {
     this.calm = 1;
   }
 
-  addPacket(t, amplitude, width = 10, speed = 9, dir = -1) {
-    const x0 = dir < 0 ? WORLD_HALF_WIDTH + width * 2 : -WORLD_HALF_WIDTH - width * 2;
+  addPacket(t, amplitude, width = 10, speed = 9, dir = -1, start = null) {
+    const x0 = start ?? (dir < 0 ? WORLD_HALF_WIDTH + width * 2 : -WORLD_HALF_WIDTH - width * 2);
     this.packets.push({ t0: t, x0, A: amplitude, w: width, c: speed, dir, xc: x0 });
     if (this.packets.length > MAX_PACKETS) this.packets.shift();
   }
