@@ -313,6 +313,22 @@ kbd {
   border-radius: 6px;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
+.tool img.cube {
+  width: 20px;
+  height: 20px;
+  transform: translateY(-4px);
+}
+.tool .arrow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ox);
+  line-height: 1;
+}
 .tool .glyph {
   font-size: 18px;
   color: var(--ink-dim);

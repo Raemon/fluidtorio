@@ -1,61 +1,14 @@
-import { LAB_TESTS, EXTRACT_PERIOD } from './config.js';
+import { EXTRACT_PERIOD } from './config.js';
 import { getAlloy, pairOutcome, materialById } from './gen.js';
-import { brittleWord } from './knowledge.js';
 
 export class Modules {
   constructor(game) {
     this.game = game;
-    this.queue = [];
-    this.tick = 0;
-  }
-
-  enqueue(test, matIds) {
-    const g = this.game;
-    const spec = LAB_TESTS[test];
-    const mats = matIds.map((id) => materialById(g.planet, id));
-    if (!g.colony.list.some((b) => b.fn === 'lab')) return { ok: false, reason: 'Build a Lab first.' };
-    for (const m of mats) {
-      if (g.stockOf(m.id) < spec.units) return { ok: false, reason: `Need ${spec.units} ${m.name} for that.` };
-    }
-    for (const m of mats) g.addStock(m.id, -spec.units);
-    this.queue.push({ test, mats, t: 0, dur: spec.time, id: Math.random() });
-    g.emit('labs');
-    return { ok: true };
-  }
-
-  cancel(job) {
-    const g = this.game;
-    const i = this.queue.indexOf(job);
-    if (i < 0) return;
-    this.queue.splice(i, 1);
-    for (const m of job.mats) g.addStock(m.id, LAB_TESTS[job.test].units);
-    g.emit('labs');
-  }
-
-  labs() {
-    return this.game.colony ? this.game.colony.list.filter((b) => b.fn === 'lab') : [];
   }
 
   update(dt) {
-    const g = this.game;
-    const col = g.colony;
+    const col = this.game.colony;
     if (!col) return;
-    const labs = this.labs();
-    for (const lab of labs) {
-      const st = lab.state;
-      if (!st.job && this.queue.length) {
-        st.job = this.queue.shift();
-        g.emit('labs');
-      }
-      if (st.job) {
-        st.job.t += dt;
-        if (st.job.t >= st.job.dur) {
-          this.finish(lab, st.job);
-          st.job = null;
-          g.emit('labs');
-        }
-      }
-    }
     for (const b of col.list) {
       if (b.fn === 'pump' || b.fn === 'condenser') this.extractor(b, dt);
       else if (b.fn === 'refinery') this.refinery(b, dt);
@@ -156,38 +109,5 @@ export class Modules {
       g.addStock(alloy.id, 4);
       g.stats.alloys += 4;
     }
-  }
-
-  finish(lab, job) {
-    const g = this.game;
-    const kn = g.knowledge;
-    const [m, m2] = job.mats;
-    if (job.test === 'density') {
-      kn.densityInterval(m, m.d * 0.995, m.d * 1.005, 'densitometer');
-      g.log(`Densitometer: ${m.name} is ${m.d.toFixed(3)} t/m³.`, 'learn', m);
-    } else if (job.test === 'press') {
-      kn.strengthExact(m, m.s, 0.02);
-      kn.ensure(m).b = m.b;
-      g.log(`Crush press: ${m.name} failed at ${Math.round(m.s)} kN. It is ${brittleWord(m.b)}.`, 'learn', m);
-      g.emit('knowledge', m);
-    } else if (job.test === 'soak') {
-      const k = kn.ensure(m);
-      const bad = [];
-      for (let i = 0; i < 6; i++) {
-        k.react[i] = m.react[i];
-        if (m.react[i] !== 'none') bad.push(`${m.react[i] === 'swell' ? 'swells in' : i === 0 ? 'burns in' : 'corrodes in'} ${g.planet.layers[i].name}`);
-      }
-      g.log(`Soak bath: ${m.name} ${bad.length ? bad.join(', ') : 'is inert everywhere'}.`, bad.length ? 'warn' : 'learn', m);
-      g.emit('knowledge', m);
-    } else if (job.test === 'crucible') {
-      const o = pairOutcome(g.planet, m, m2);
-      kn.pairResult(m, m2, o, 'crucible');
-      if (o === 'volatile') {
-        g.fx.push({ type: 'pop', block: lab });
-        g.emit('sfx', { name: 'pop' });
-        for (const e of lab.edges) if (e) e.damage = Math.min(0.9, e.damage + 0.25);
-      }
-    }
-    g.stats.tests++;
   }
 }

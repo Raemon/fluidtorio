@@ -38,6 +38,7 @@ export class Knowledge {
       n.react = k.react.slice();
       n.firstCrack = k.firstCrack;
       n.firstBreak = k.firstBreak;
+      n.ev = { d: k.ev.d.slice(), s: k.ev.s.slice(), r: k.ev.r.slice() };
     }
     for (const [key, o] of old.pairs) this.pairs.set(key, o);
     this.infer();
@@ -55,6 +56,7 @@ export class Knowledge {
       bHint: null,
       react: exact ? mat.react.slice() : new Array(6).fill(null),
       exposure: new Array(6).fill(0),
+      ev: { d: [], s: [], r: [] },
       firstCrack: false,
       firstBreak: false,
       lastLowerNote: 0,
@@ -70,7 +72,19 @@ export class Knowledge {
 
   note(text, kind = 'info', mat = null) {
     if (mat && !this.ensure(mat).seen) return;
+    if (kind === 'learn') this.game.stats.findings++;
     this.game.log(text, kind, mat);
+  }
+
+  /** Remember how something was learned, so the notebook can show its evidence. */
+  evidence(mat, prop, text, replace = null) {
+    const list = this.ensure(mat).ev[prop];
+    if (replace) {
+      const i = list.findIndex((x) => x.startsWith(replace));
+      if (i >= 0) list.splice(i, 1);
+    }
+    list.push(text);
+    if (list.length > 5) list.shift();
   }
 
   see(mat) {
@@ -92,6 +106,7 @@ export class Knowledge {
     if (nhi - nlo < before - 1e-6) {
       k.d = [nlo, nhi];
       const after = nhi - nlo;
+      if (why) this.evidence(mat, 'd', `${why}: ${after < 0.05 ? `≈ ${fmt((nlo + nhi) / 2)}` : `${fmt(nlo)}–${isFinite(nhi) && nhi < 6 ? fmt(nhi) : '?'}`}`);
       if (why && before - after > 0.004) {
         const val = after < 0.05 ? `≈ ${fmt((nlo + nhi) / 2)}` : `${fmt(nlo)}–${fmt(nhi)}`;
         this.note(`${mat.name}: density ${val} t/m³ (${why})`, 'learn', mat);
@@ -105,6 +120,7 @@ export class Knowledge {
     if (k.exact || v <= k.s[0]) return;
     const old = k.s[0];
     k.s[0] = Math.min(v, k.s[1]);
+    this.evidence(mat, 's', `a joint held ${Math.round(k.s[0])} kN`, 'a joint held');
     const t = this.game.time;
     if (k.s[0] > old * 1.25 && t - k.lastLowerNote > 4) {
       k.lastLowerNote = t;
@@ -117,13 +133,8 @@ export class Knowledge {
     const k = this.ensure(mat);
     if (k.exact || v >= k.s[1]) return;
     k.s[1] = Math.max(v, k.s[0]);
+    this.evidence(mat, 's', `a joint gave way under ${Math.round(v)} kN`, 'a joint gave way');
     if (why) this.note(`${mat.name}: ${why} — strength under ${Math.round(v)} kN.`, 'warn', mat);
-    this.game.emit('knowledge', mat);
-  }
-
-  strengthExact(mat, v, err = 0.02) {
-    const k = this.ensure(mat);
-    k.s = [v * (1 - err), v * (1 + err)];
     this.game.emit('knowledge', mat);
   }
 
@@ -148,6 +159,7 @@ export class Knowledge {
     if (k.react[layer] === type) return;
     const prev = k.react[layer];
     k.react[layer] = type;
+    this.evidence(mat, 'r', `${type === 'none' ? 'inert in' : type === 'swell' ? 'swelled in' : layer === 0 ? 'burned in' : 'corroded in'} ${this.planet.layers[layer].name}`);
     if (type !== 'none' || how) {
       const L = this.planet.layers[layer];
       const verb = type === 'corrode' ? (layer === 0 ? 'oxidises (burns) in' : 'corrodes in') : type === 'swell' ? 'soaks up and swells in' : 'is inert in';
@@ -167,7 +179,7 @@ export class Knowledge {
       return;
     }
     k.exposure[layer] += dt;
-    if (k.exposure[layer] > 3) this.reaction(mat, layer, 'none');
+    if (k.exposure[layer] > 2) this.reaction(mat, layer, 'none');
   }
 
   pairResult(a, b, outcome, how) {

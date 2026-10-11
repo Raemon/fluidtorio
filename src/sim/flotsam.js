@@ -190,7 +190,7 @@ export class Flotsam {
       c.layer = layer;
       const v = c.body.getLinearVelocity();
       const sp = Math.hypot(v.x, v.y);
-      if (layer <= 5) g.knowledge.exposed(c.mat, layer, dt);
+      if (layer <= 5 && g.experiments.near(p.x, p.y)) g.knowledge.exposed(c.mat, layer, dt);
       if (c.mat.react[layer] && c.mat.react[layer] !== 'none' && layer <= 5) c.fizz = Math.min(1, c.fizz + dt * 2);
       else c.fizz = Math.max(0, c.fizz - dt);
       if (sp < 0.35 && !c.grabbed) c.settled += dt;
@@ -229,35 +229,6 @@ export class Flotsam {
         return;
       }
     }
-  }
-
-  /** Read a floating chunk's waterline: Archimedes, by eye. */
-  measureWaterline(c) {
-    const g = this.game;
-    if (!c.body) return null;
-    const p = c.body.getPosition();
-    const t = g.time;
-    const L = g.planet.layers;
-    const surf = g.sea.surfaceY(p.x, t);
-    let upper, lower;
-    if (Math.abs(p.y - surf) < 1.2) {
-      upper = { rho: 0, name: 'air' };
-      lower = L[3];
-    } else {
-      for (const kk of [4, 5]) {
-        const y = g.sea.ifaceY(kk, p.x, t);
-        if (Math.abs(p.y - y) < 1.2) {
-          upper = L[kk - 1];
-          lower = L[kk];
-        }
-      }
-    }
-    if (!upper) return null;
-    const v = c.body.getLinearVelocity();
-    if (Math.hypot(v.x, v.y) > 0.8) return null;
-    const frac = (c.mat.d - upper.rho) / (lower.rho - upper.rho);
-    if (frac <= 0 || frac >= 1) return null;
-    return { frac, upper, lower };
   }
 }
 

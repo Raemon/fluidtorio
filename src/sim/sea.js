@@ -48,6 +48,16 @@ export class Sea {
     this.packets = this.packets.filter((p) => Math.abs(p.xc) < WORLD_HALF_WIDTH + p.w * 4);
   }
 
+  /** How big a swell is passing over x right now (its envelope, in metres). */
+  swellAt(x) {
+    let a = 0;
+    for (const p of this.packets) {
+      const u = (x - p.xc) / p.w;
+      if (u < 3 && u > -3) a += p.A * Math.exp(-u * u * 0.5);
+    }
+    return a;
+  }
+
   packetHeight(x) {
     let h = 0;
     for (const p of this.packets) {

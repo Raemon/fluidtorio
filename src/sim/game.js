@@ -8,6 +8,7 @@ import { Flotsam, Grapples } from './flotsam.js';
 import { Modules } from './modules.js';
 import { Rocket } from './rocket.js';
 import { Progress } from './progress.js';
+import { Experiments } from './experiments.js';
 import {
   DT,
   FUNCS,
@@ -37,7 +38,7 @@ export class Game {
     this.fx = [];
     this.flags = {};
     this.stock = new Map();
-    this.stats = { chunks: 0, tests: 0, blocks: 0, collapses: 0, alloys: 0, launches: 0 };
+    this.stats = { chunks: 0, cubes: 0, weighings: 0, findings: 0, blocks: 0, collapses: 0, alloys: 0, launches: 0 };
     this.state = 'playing';
     this.structures = [];
     this.knowledge = new Knowledge(this);
@@ -45,6 +46,7 @@ export class Game {
     this.grapples = new Grapples(this);
     this.modules = new Modules(this);
     this.rocket = new Rocket(this);
+    this.experiments = new Experiments(this);
     this.rng = new Rng(seed ^ 0xbadc0de);
     this.stepCount = 0;
     this.tremorAt = 70;
@@ -184,6 +186,7 @@ export class Game {
     const wp = col.worldPos(gx, gy);
     this.fx.push({ type: 'place', x: wp.x, y: wp.y, block: b });
     this.emit('sfx', { name: 'place', x: wp.x, y: wp.y });
+    this.experiments.onPlace(b);
     this.emit('built', b);
     return { ok: true, block: b };
   }
@@ -202,6 +205,7 @@ export class Game {
     if (!b || b.struct !== col || b.fn === 'core') return false;
     const wp = col.worldPos(b.gx, b.gy);
     if (b.fuel) this.addStock('prop', b.fuel);
+    this.experiments.disturb('You took a block off while weighing, so that reading is lost.');
     this.refundFor(b, 0.75);
     col.removeBlock(b);
     col.body.resetMassData();
@@ -215,13 +219,14 @@ export class Game {
   jettison(b) {
     const col = this.colony;
     if (!b || b.struct !== col || b.fn === 'core') return false;
+    this.experiments.disturb('You cut a block loose while weighing, so that reading is lost.');
     const s = col.detach([b], 'wreck');
     this.structures.push(s);
     s.body.applyLinearImpulse(new pl.Vec2((b.gx >= 0 ? 1 : -1) * 2 * b.mass, 1.5 * b.mass), s.body.getWorldCenter(), true);
     col.body.resetMassData();
     this.checkSplit(col);
     this.emit('sfx', { name: 'remove' });
-    this.log(`Jettisoned a ${b.mat.name} block. Watch where it settles.`, 'info', b.mat);
+    this.log(`Cut a ${b.mat.name} block loose. Watch where it settles.`, 'info', b.mat);
     this.emit('built', null);
     return true;
   }
@@ -249,6 +254,7 @@ export class Game {
     const root = struct === this.colony ? struct.core : struct.kind === 'rocket' ? this.rocket.rootBlock() : struct.list[0];
     const comps = struct.components(() => root);
     if (comps.length <= 1) return;
+    if (struct === this.colony) this.experiments.disturb('Part of the colony broke away while weighing.');
     for (let i = 1; i < comps.length; i++) {
       const s = struct.detach(comps[i], 'wreck');
       this.structures.push(s);
@@ -398,7 +404,8 @@ export class Game {
     const t = this.time;
     const kn = this.knowledge;
     for (const s of this.structures) {
-      const learn = s === this.colony || s.kind === 'wreck';
+      const wc = s.body.getWorldCenter();
+      const learn = s === this.colony || (s.kind === 'wreck' && this.experiments.near(wc.x, wc.y));
       for (const b of s.list) {
         const p = s.worldPos(b.gx, b.gy);
         const layer = this.sea.layerAt(p.x, p.y, t);
@@ -537,6 +544,7 @@ export class Game {
       this.updateBlocks(sdt);
       this.flotsam.update(sdt);
       this.modules.update(sdt);
+      this.experiments.update(sdt);
       if (!this.attract) {
         this.updateVolcano(sdt);
         this.progress.update();

@@ -65,21 +65,9 @@ export const FUNCS = {
     reach: 17,
     desc: 'Grapples flotsam within 17 m by itself. Build it where the flotsam is.',
   },
-  lab: {
-    name: 'Lab',
-    key: '4',
-    group: 'industry',
-    fixedMat: 'salvage',
-    fill: 0.5,
-    equip: 0.8,
-    sMul: 0.8,
-    cost: 0,
-    salvage: 7,
-    desc: 'Rebuilt from your test gear. Tests samples exactly: density, strength, reactions, alloys. One test at a time.',
-  },
   smelter: {
     name: 'Smelter',
-    key: '5',
+    key: '4',
     group: 'industry',
     fill: 0.6,
     equip: 1.4,
@@ -87,11 +75,11 @@ export const FUNCS = {
     cost: 7,
     salvage: 3,
     heat: 1,
-    desc: 'Fuses two materials into an alloy (3 + 3 → 4). Some pairs explode.',
+    desc: 'Fuses two materials into an alloy (3 + 3 → 4). Some pairs explode: build it out on a limb.',
   },
   pump: {
     name: 'Pump',
-    key: '6',
+    key: '5',
     group: 'industry',
     fill: 0.5,
     equip: 0.7,
@@ -102,7 +90,7 @@ export const FUNCS = {
   },
   condenser: {
     name: 'Condenser',
-    key: '7',
+    key: '6',
     group: 'industry',
     fill: 0.5,
     equip: 0.7,
@@ -113,7 +101,7 @@ export const FUNCS = {
   },
   refinery: {
     name: 'Refinery',
-    key: '8',
+    key: '7',
     group: 'industry',
     fill: 0.6,
     equip: 1.2,
@@ -125,7 +113,7 @@ export const FUNCS = {
   },
   pad: {
     name: 'Launch Pad',
-    key: '9',
+    key: '8',
     group: 'rocket',
     fill: 1,
     equip: 0.4,
@@ -136,7 +124,7 @@ export const FUNCS = {
   },
   engine: {
     name: 'Engine',
-    key: '0',
+    key: '9',
     group: 'rocket',
     rocket: true,
     fill: 0.6,
@@ -148,7 +136,7 @@ export const FUNCS = {
   },
   tank: {
     name: 'Tank',
-    key: 't',
+    key: '0',
     group: 'rocket',
     rocket: true,
     fill: 0.3,
@@ -189,7 +177,6 @@ export const BUILD_ORDER = [
   'frame',
   'hollow',
   'crane',
-  'lab',
   'smelter',
   'pump',
   'condenser',
@@ -199,10 +186,3 @@ export const BUILD_ORDER = [
   'tank',
   'capsule',
 ];
-
-export const LAB_TESTS = {
-  density: { name: 'Densitometer', short: 'Weigh', units: 1, time: 6, desc: 'Exact density.' },
-  press: { name: 'Crush press', short: 'Crush', units: 2, time: 10, desc: 'Exact strength, and whether it warns before it breaks.' },
-  soak: { name: 'Soak bath', short: 'Soak', units: 1, time: 12, desc: 'How it reacts with every layer of sea and sky, safely.' },
-  crucible: { name: 'Crucible', short: 'Crucible', units: 1, time: 8, desc: 'How two materials fuse, safely. A thimble-sized smelt.' },
-};

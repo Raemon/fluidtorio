@@ -89,7 +89,7 @@ class App {
       }
     for (let y = -2; y >= -6; y--) g.place(0, y, 'frame', S);
     g.place(0, -7, 'crane', S);
-    g.place(-3, 1, 'lab', S);
+    g.place(-3, 1, 'frame', S);
     g.place(3, 1, 'smelter', S);
     for (const x of [-7, 7]) {
       for (let y = 1; y <= 5; y++) g.place(x, y, y < 3 ? 'frame' : 'hollow', S);
@@ -199,7 +199,7 @@ class App {
       : `You pinned down ${learned} of ${known.length} materials. Try the same planet again and your notebook comes with you: same materials, same fluids, and everything you learned this time.`;
     const stats = [
       ['Chunks hauled', g.stats.chunks],
-      ['Lab tests', g.stats.tests],
+      ['Findings', g.stats.findings],
       ['Blocks built', g.stats.blocks],
       ['Collapses', g.stats.collapses],
       ['Alloy units', g.stats.alloys],
@@ -355,6 +355,9 @@ class App {
         break;
       case 'j':
         ui.setTool('jettison');
+        break;
+      case 'g':
+        if (this.game.progress.has('drop')) ui.setTool('drop');
         break;
       case 'v':
         ui.toggleStress();

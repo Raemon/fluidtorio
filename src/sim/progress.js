@@ -96,7 +96,7 @@ export class Progress {
 
     const seenRaw = raws.filter((m) => kn.get(m).seen);
     if (seenRaw.length) {
-      this.unlock('lab', 'Unknown material aboard. Your test gear can be rebuilt as a Lab.');
+      this.unlock('drop', 'Unknown material aboard. Drop a test cube of it overboard [G] and watch what it does.');
       this.unlock('notebook');
       this.unlock('lens');
     }
@@ -150,19 +150,19 @@ export class Progress {
       {
         id: 'weigh',
         title: first ? `Find out what ${first.name} weighs` : 'Find out what new materials weigh',
-        hint: 'Density decides whether building with it floats you or sinks you. A resting chunk’s waterline gives it away; a Lab measures it exactly.',
+        hint: 'Density decides whether building with it floats you or sinks you. Drop a cube overboard and see how deep it floats, or set some on the deck and see how much lower the raft rides.',
         done: () => g.planet.materials.some((m) => kn.get(m).seen && kn.get(m).d[1] / kn.get(m).d[0] < 1.2),
       },
       {
         id: 'fuel',
         title: 'Find fuel',
-        hint: `Below ${L[4].name}, ${L[5].name} glows as if it would burn. Reach down to it.`,
+        hint: `Below ${L[4].name}, ${L[5].name} glows as if it would burn. Reach down to it, or haul up something that rests on it.`,
         done: () => this.found.fuel,
       },
       {
         id: 'pump',
         title: `Pump fuel from ${L[5].name}`,
-        hint: `A Pump only works inside ${L[5].name}, ${(-L[5].top).toFixed(0)} m down. Mind what the deep does to your materials.`,
+        hint: `A Pump only works inside ${L[5].name}, ${(-L[5].top).toFixed(0)} m down. Before you trust a keel to a material, find out what the deep does to it: a dropped cube samples every layer it sinks through.`,
         done: () => !!g.flags.pump,
       },
       {
@@ -174,7 +174,7 @@ export class Progress {
       {
         id: 'condense',
         title: `Condense oxidiser from ${L[0].name}`,
-        hint: `A Condenser only works inside ${L[0].name}. A tall tower needs lift under it and strength in it.`,
+        hint: `A Condenser only works inside ${L[0].name}. A tall tower needs lift under it and strength in it: load a test joint with something heavy before you trust it.`,
         done: () => !!g.flags.condenser,
       },
       {

@@ -1,4 +1,5 @@
-import { FUNCS, LAB_TESTS, GRAPPLE_REACH_CRANE, ESCAPE_SPEED } from './sim/config.js';
+import { FUNCS, GRAPPLE_REACH_CRANE, GRAPPLE_REACH_CORE, ESCAPE_SPEED } from './sim/config.js';
+import { DROP_COST } from './sim/experiments.js';
 import { allMaterials, materialById } from './sim/gen.js';
 import { iconDataURL, swatchDataURL, toCss } from './render/textures.js';
 import { predictJoints, classify, colonyStatus, predictRocket, ghostFluid } from './sim/predict.js';
@@ -11,11 +12,14 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 /** Palette groups, in the order they tend to become available. */
 const GROUPS = [
   ['frame', 'hollow'],
-  ['lab', 'crane', 'smelter'],
+  ['crane', 'smelter'],
   ['pump', 'condenser', 'refinery'],
   ['pad', 'engine', 'tank', 'capsule'],
 ];
-const TOOLS = [['repair', '✚', 'patch', 'R']];
+const TOOLS = [
+  ['drop', null, 'drop', 'G'],
+  ['repair', '✚', 'patch', 'R'],
+];
 
 const OUTCOME_GLYPH = { strong: '★', plain: '○', dull: '▽', volatile: '✸' };
 const OUTCOME_WORD = { strong: 'superb', plain: 'ordinary', dull: 'crumbly', volatile: 'explosive' };
@@ -34,7 +38,7 @@ const TIPS = {
   'tab-mats': ['Materials', '', 'Each property is a range: everything it could still be.'],
   'tab-alloys': ['Alloys', '', 'How pairs fuse. One hidden rule decides every pair.'],
   density: ['Density', '', 'Tonnes per m³. Coloured ticks are the liquids: anything lighter than a tick floats on that liquid.'],
-  strength: ['Strength', '', 'Load one joint can carry. Learned from joints that hold or crack, or a crush test.'],
+  strength: ['Strength', '', 'Load one joint can carry. Learned from joints that hold, crack or snap under load.'],
   column: ['Column', '', 'How tall a solid column of it stands before its base gives way.'],
   temper: ['Temper', '', 'Brittle materials barely crack before they snap. Ductile ones warn you first.'],
   'res-fuel': ['Fuel', '', 'Pumped from the deep. Refined with oxidiser into propellant.'],
@@ -47,16 +51,12 @@ const TIPS = {
   'f-struct': ['Under thrust', '', 'Whether the stack holds together at full acceleration.'],
   launch: ['Launch', '', 'The stack leaves the colony. There is no calling it back.'],
   'mp-patch': ['Patch', 'R', 'Restore its joints for 1 unit of its material.'],
-  'mp-jettison': ['Jettison', 'J', 'Cut it loose. Where it settles tells you its density.'],
+  'mp-jettison': ['Jettison', 'J', 'Cut it loose. Where it settles, and how deep it floats, tells you its density.'],
   'mp-dismantle': ['Dismantle', 'right-click', 'Take it apart and get 75% back.'],
   'mp-auto': ['Auto-haul', '', 'Let this crane grab whatever drifts into reach.'],
   heel: ['Heel', '', 'How far the colony leans. Top-heavy builds lean more. Past about 25° it can capsize.'],
   damage: ['Worst joint', '', 'Damage on the most worn joint. Patch it, or take load off before it snaps.'],
-  crucible: ['Crucible', '1 + 1 · 8 s', 'A thimble-sized smelt in a Lab. Shows how the pair fuses, safely.'],
-  smelt: ['Smelt', '3 + 3 → 4', 'Sets an idle Smelter to this pair. Untested pairs can explode.'],
-  job: ['Lab test', '', 'Running. The result goes into the notebook.'],
-  queued: ['Queued test', '', 'Waits for a free Lab.'],
-  cancel: ['Cancel', '', 'The samples come back.'],
+  smelt: ['Smelt', '3 + 3 → 4', 'Sets an idle Smelter to this pair. Untested pairs can explode: keep that Smelter away from the core.'],
 };
 
 function fmtTime(s) {
@@ -182,6 +182,7 @@ export class UI {
     for (const id of u.ids) {
       if (FUNCS[id]) this.fresh.add('fn:' + id);
       if (id === 'patch') this.fresh.add('tool:repair');
+      if (id === 'drop') this.fresh.add('tool:drop');
       if (id === 'lens') this.fresh.add('lens');
       if (id === 'stress') this.fresh.add('stress');
       if (id === 'notebook') {
@@ -252,6 +253,11 @@ export class UI {
       const c = e.target.closest('[data-mat]');
       if (!c) return;
       this.matId = c.dataset.mat;
+      if (this.tool === 'drop') {
+        this.dirty.chips = true;
+        this.dirty.palette = true;
+        return this.app.click();
+      }
       const keep = this.tool === 'build' && !FUNCS[this.fn].fixedMat;
       this.pickFn(keep ? this.fn : 'frame');
     });
@@ -324,7 +330,7 @@ export class UI {
   setTool(tool) {
     this.tool = tool;
     if (tool !== 'build') this.ghost = null;
-    if (tool === 'repair') this.clearFresh('tool:repair');
+    if (tool === 'repair' || tool === 'drop') this.clearFresh('tool:' + tool);
     this.dirty.palette = true;
     this.dirty.chips = true;
     this.app.click();
@@ -462,7 +468,6 @@ export class UI {
       this.uiT = 0;
       this.dirty.status = true;
       this.dirty.goal = true;
-      if (g.modules.labs().some((l) => l.state.job)) this.dirty.journal = true;
     }
     if (this.dirty.chips && now - (this.chipsAt || 0) > 150) {
       this.chipsAt = now;
@@ -519,8 +524,8 @@ export class UI {
       items.push({
         key: 'tool:' + id,
         attr: `data-tool="${id}"`,
-        cls: `${this.tool === id ? 'active' : ''} ${this.fresh.has('tool:' + id) ? 'fresh' : ''}`,
-        inner: `<span class="glyph">${glyph}</span><span class="tkey">${key}</span>`,
+        cls: `${this.tool === id ? 'active' : ''} ${g.stockOf(mat.id) < DROP_COST && id === 'drop' ? 'poor' : ''} ${this.fresh.has('tool:' + id) ? 'fresh' : ''}`,
+        inner: `${glyph ? `<span class="glyph">${glyph}</span>` : `<img class="cube" src="${this.icon('frame', mat)}" alt="Drop"><span class="arrow">↓</span>`}<span class="tkey">${key}</span>`,
       });
     // update in place, so only newly unlocked buttons animate in
     const el = $('palette');
@@ -549,7 +554,7 @@ export class UI {
     const g = this.game;
     const P = g.progress;
     let h = '';
-    const building = this.tool === 'build' && !FUNCS[this.fn].fixedMat;
+    const building = (this.tool === 'build' && !FUNCS[this.fn].fixedMat) || this.tool === 'drop';
     for (const m of this.knownMats()) {
       const sel = m.id === this.matId;
       const fresh = this.fresh.has('mat:' + m.id) ? 'fresh' : '';
@@ -609,27 +614,11 @@ export class UI {
     this.cardPulse.clear();
   }
 
-  labsHTML() {
-    const g = this.game;
-    const jobs = g.modules.labs().filter((l) => l.state.job);
-    if (!jobs.length && !g.modules.queue.length) return '';
-    let h = '<div class="labs">';
-    for (const l of jobs) {
-      const j = l.state.job;
-      h += `<div class="job" data-tip="job"><span>${this.jobName(j)}</span><span class="fine">${Math.ceil(j.dur - j.t)} s</span><div class="pbar"><i style="width:${Math.min(100, (j.t / j.dur) * 100)}%"></i></div></div>`;
-    }
-    g.modules.queue.forEach((j, i) => {
-      h += `<div class="job" data-tip="queued"><span class="fine">${this.jobName(j)}</span><button class="x" data-cancel="${i}" data-tip="cancel">×</button></div>`;
-    });
-    return h + '</div>';
-  }
-
   matsHTML() {
     const g = this.game;
     const kn = g.knowledge;
-    const hasLab = g.modules.labs().length > 0;
     const L = g.planet.layers;
-    let h = this.labsHTML();
+    let h = '';
     const mats = this.knownMats();
     const ordered = mats.filter((m) => m.kind !== 'salvage').concat(mats.filter((m) => m.kind === 'salvage'));
     for (const m of ordered) {
@@ -648,12 +637,12 @@ export class UI {
         dB = logPos(Math.min(dh, 6), 0.1, 6);
       let ticks = '';
       for (const l of L.slice(3)) ticks += `<span class="tickm" style="left:${logPos(l.rho, 0.1, 6) * 100}%;background:${toCss(l.color.map((c) => Math.min(1, c * 1.8 + 0.1)))}"></span>`;
-      h += `<div class="prop" data-tip="density"><span class="pk">Density</span><div class="bar">${ticks}<span class="rng ${dh / dl < 1.015 ? 'exact' : ''} ${dTxt === '?' ? 'unknown' : ''}" style="left:${dA * 100}%;width:${Math.max(0.5, (dB - dA) * 100)}%"></span></div><span class="pv">${dTxt}</span></div>`;
+      h += `<div class="prop" data-tip="d:${m.id}"><span class="pk">Density</span><div class="bar">${ticks}<span class="rng ${dh / dl < 1.015 ? 'exact' : ''} ${dTxt === '?' ? 'unknown' : ''}" style="left:${dA * 100}%;width:${Math.max(0.5, (dB - dA) * 100)}%"></span></div><span class="pv">${dTxt}</span></div>`;
       const [sl, sh] = k.s;
       const sTxt = this.strengthText(k);
       const sA = logPos(sl, 10, 4000),
         sB = logPos(Math.min(sh, 4000), 10, 4000);
-      h += `<div class="prop" data-tip="strength"><span class="pk">Strength</span><div class="bar"><span class="rng ${sh / sl < 1.06 ? 'exact' : ''} ${sTxt === '?' ? 'unknown' : ''}" style="left:${sA * 100}%;width:${Math.max(0.5, (sB - sA) * 100)}%"></span></div><span class="pv">${sTxt}</span></div>`;
+      h += `<div class="prop" data-tip="s:${m.id}"><span class="pk">Strength</span><div class="bar"><span class="rng ${sh / sl < 1.06 ? 'exact' : ''} ${sTxt === '?' ? 'unknown' : ''}" style="left:${sA * 100}%;width:${Math.max(0.5, (sB - sA) * 100)}%"></span></div><span class="pv">${sTxt}</span></div>`;
       if (dh < D_PRIOR[1] && sl > S_PRIOR[0] * 1.5) {
         const hLo = sl / (9.8 * dh),
           hHi = sh / (9.8 * dl);
@@ -671,18 +660,8 @@ export class UI {
         h += `<span class="rx ${cls}" style="background:${bg}" data-tip="rx:${m.id}:${i}">${sym}</span>`;
       }
       h += `</div>`;
-      if (hasLab) {
-        h += `<div class="tests">`;
-        for (const t of ['density', 'press', 'soak']) {
-          const spec = LAB_TESTS[t];
-          const dis = g.stockOf(m.id) < spec.units;
-          h += `<button class="test-btn" data-test="${t}" data-mat="${m.id}" ${dis ? 'disabled' : ''} data-tip="test:${t}:${m.id}">${spec.short}<small>${spec.units}</small></button>`;
-        }
-        h += `</div>`;
-      }
       h += `</div>`;
     }
-    if (!hasLab && g.progress.has('lab') && ordered.length > 1) h += `<div class="note-small">A <b>Lab</b> tests samples exactly. Everything else you learn the hard way.</div>`;
     return h;
   }
 
@@ -715,36 +694,21 @@ export class UI {
     if (this.pair) {
       const [a, b] = this.pair.map((id) => materialById(g.planet, id));
       const p = kn.pairPossible(a, b);
-      const hasLab = g.modules.labs().length > 0;
       const smelters = g.colony ? g.colony.list.filter((x) => x.fn === 'smelter') : [];
       h += `<div class="card"><div class="card-head"><img src="${this.swatch(a)}"><img src="${this.swatch(b)}"><div><div class="nm">${esc(a.name)} + ${esc(b.name)}</div><div class="sub">${p.known ? OUTCOME_WORD[p.known] + (p.direct ? '' : ' (deduced)') : 'outcome unknown'}</div></div></div>`;
-      const canC = hasLab && g.stockOf(a.id) >= 1 && g.stockOf(b.id) >= 1;
-      h += `<div class="tests"><button class="test-btn" data-crucible="${a.id},${b.id}" ${canC ? '' : 'disabled'} data-tip="crucible">Crucible</button>`;
-      h += `<button class="test-btn" data-smelt="${a.id},${b.id}" ${smelters.length ? '' : 'disabled'} data-tip="smelt">Smelt</button></div>`;
-      if (!p.known || p.known === 'volatile') h += `<div class="note-small ${p.known === 'volatile' ? 'fail' : 'risk'}">${p.known === 'volatile' ? 'This pair explodes.' : 'Untested. A full smelt might explode.'}</div>`;
+      h += `<div class="tests"><button class="test-btn" data-smelt="${a.id},${b.id}" ${smelters.length ? '' : 'disabled'} data-tip="smelt">Smelt</button></div>`;
+      if (!p.known || p.known === 'volatile') h += `<div class="note-small ${p.known === 'volatile' ? 'fail' : 'risk'}">${p.known === 'volatile' ? 'This pair explodes.' : 'Untested: it might explode. Smelt it well away from the core.'}</div>`;
       h += `</div>`;
     } else h += `<div class="note-small">Pick a pair. What one pair does tells you about others: deduced results have dashed borders.</div>`;
     return h;
-  }
-
-  jobName(j) {
-    return `${LAB_TESTS[j.test].short} · ${j.mats.map((m) => m.name).join(' + ')}`;
   }
 
   onJournalClick(e) {
     const g = this.game;
     const t = e.target.closest('button');
     if (!t) return;
-    if (t.dataset.test) {
-      const r = g.modules.enqueue(t.dataset.test, [t.dataset.mat]);
-      if (!r.ok) g.log(r.reason, 'warn');
-      this.app.click();
-    } else if (t.dataset.pair) {
+    if (t.dataset.pair) {
       this.pair = t.dataset.pair.split(',');
-      this.app.click();
-    } else if (t.dataset.crucible) {
-      const r = g.modules.enqueue('crucible', t.dataset.crucible.split(','));
-      if (!r.ok) g.log(r.reason, 'warn');
       this.app.click();
     } else if (t.dataset.smelt) {
       const [a, b] = t.dataset.smelt.split(',');
@@ -755,8 +719,6 @@ export class UI {
         g.log(`Smelter set to ${materialById(g.planet, a).name} + ${materialById(g.planet, b).name}.`, 'info');
       }
       this.app.click();
-    } else if (t.dataset.cancel !== undefined) {
-      g.modules.cancel(g.modules.queue[+t.dataset.cancel]);
     }
     this.dirty.journal = true;
   }
@@ -859,6 +821,16 @@ export class UI {
       return tip(f.name, (f.key || '').toUpperCase(), f.desc, `${cost || 'free'}${afford ? '' : ' · <span class="fail">not enough</span>'}`);
     }
     if (kind === 'tool' && a === 'repair') return tip('Patch', 'R', 'Click a cracked block to restore its joints. 1 unit of its material each.');
+    if (kind === 'tool' && a === 'drop')
+      return tip(`Drop a test cube · ${esc(this.mat.name)}`, 'G', 'Lower a solid cube into the sea. Where it settles, how deep it floats and what it does on the way down all go in the notebook.', `${DROP_COST} ${esc(this.mat.name)} · grapple it back for some of that`);
+    if (kind === 'd' || kind === 's') {
+      const m = materialById(g.planet, a);
+      const k = g.knowledge.get(m);
+      const [t, , body] = TIPS[kind === 'd' ? 'density' : 'strength'];
+      const ev = k.ev[kind];
+      const how = ev.length ? `<div class="tt-meta">${ev.map((x) => '· ' + esc(x)).join('<br>')}</div>` : `<div class="tt-meta">Nothing yet. ${kind === 'd' ? 'Drop a cube, or weigh some on the deck.' : 'Put some load on a joint of it.'}</div>`;
+      return tip(t, '', body) + how;
+    }
     if (kind === 'mat') {
       const m = materialById(g.planet, a);
       if (!m) return '';
@@ -878,7 +850,7 @@ export class UI {
       const r = g.knowledge.get(m).react[i];
       const words =
         r === null
-          ? 'Unknown. Leave some in it for a few seconds, or soak-test it.'
+          ? 'Unknown. Leave some of it in there a few seconds and watch.'
           : r === 'none'
             ? 'Inert here.'
             : r === 'swell'
@@ -887,12 +859,6 @@ export class UI {
                 ? 'Burns: its joints weaken fast.'
                 : 'Corrodes: joints weaken, floats flood.';
       return tip(esc(L[i].name), L[i].kind === 'air' ? 'air' : 'liquid', words);
-    }
-    if (kind === 'test') {
-      const spec = LAB_TESTS[a];
-      const m = materialById(g.planet, b);
-      const short = g.stockOf(m.id) < spec.units;
-      return tip(spec.name, `${spec.units} unit${spec.units > 1 ? 's' : ''} · ${spec.time} s`, spec.desc, short ? `<span class="fail">Needs ${spec.units} ${esc(m.name)}</span>` : '');
     }
     if (kind === 'pair') {
       const [ma, mb] = a.split(',').map((id) => materialById(g.planet, id));
@@ -996,7 +962,11 @@ export class UI {
     let h = '';
     const hv = this.hover;
     const L = g.planet.layers;
-    if (this.tool === 'build' && this.ghost) {
+    if (this.tool === 'drop' && this.dropGhost) {
+      const d = this.dropGhost;
+      h = `<div class="tt-title">Test cube · ${esc(this.mat.name)}<span class="tt-key">${DROP_COST} units</span></div>`;
+      h += d.ok ? `<div class="tt-dim">${esc(d.where)}</div><div class="tt-act">Click to drop it</div>` : `<div class="fail">${esc(d.reason || 'Can’t drop it there.')}</div>`;
+    } else if (this.tool === 'build' && this.ghost) {
       const gh = this.ghost;
       const f = FUNCS[this.fn];
       const m = gh.mat || this.mat;
@@ -1019,21 +989,13 @@ export class UI {
       h = c.debris
         ? `<div class="tt-title">Lander debris<span class="tt-key">${c.units} salvage</span></div>`
         : `<div class="tt-title">${k.seen ? esc(c.mat.name) : 'Something new'}<span class="tt-key">${c.units} units</span></div>`;
-      const ms = c.debris ? null : g.flotsam.measureWaterline(c);
       const p = c.body.getPosition();
-      if (ms) {
-        const est = ms.upper.rho + ms.frac * (ms.lower.rho - ms.upper.rho);
-        if (this.hoverT > 0.7 || c.readout) {
-          if (!c.readout) {
-            const err = 0.03 * (ms.lower.rho - ms.upper.rho);
-            c.readout = true;
-            g.knowledge.densityInterval(c.mat, c.mat.d - err * (0.3 + Math.random() * 0.7), c.mat.d + err * (0.3 + Math.random() * 0.7), 'waterline reading');
-          }
-          h += `<div>${Math.round(ms.frac * 100)}% under ${ms.upper.name === 'air' ? 'the surface' : `the ${esc(ms.lower.name)} line`}: <b>≈ ${est.toFixed(2)} t/m³</b></div>`;
-        } else h += `<div class="tt-dim">Hold still to read its waterline…</div>`;
-      } else if (c.layer === 5 && p.y < g.physics.floorAt(p.x) + 1.6) h += `<div class="tt-dim">On the floor: denser than ${esc(L[5].name)}</div>`;
+      if (c.layer === 5 && p.y < g.physics.floorAt(p.x) + 1.6) h += `<div class="tt-dim">On the floor</div>`;
       else if (Math.abs(p.y - g.sea.surfaceY(p.x, g.time)) < 1.2) h += `<div class="tt-dim">Floating on ${esc(L[3].name)}</div>`;
-      else h += `<div class="tt-dim">In ${esc(L[Math.min(5, Math.max(0, c.layer))].name)}</div>`;
+      else {
+        const k5 = Math.abs(p.y - g.sea.ifaceY(5, p.x, g.time)) < 1.2 ? 5 : Math.abs(p.y - g.sea.ifaceY(4, p.x, g.time)) < 1.2 ? 4 : 0;
+        h += k5 ? `<div class="tt-dim">Resting on ${esc(L[k5].name)}</div>` : `<div class="tt-dim">In ${esc(L[Math.min(5, Math.max(0, c.layer))].name)}</div>`;
+      }
       if (c.fizz > 0.2) h += `<div class="fail">Reacting with the fluid!</div>`;
       const reach = this.reachFor(p);
       h += reach.ok ? `<div class="tt-act">Click to haul in</div>` : `<div class="tt-dim">Out of reach (${reach.d.toFixed(0)} m)</div>`;
@@ -1044,7 +1006,6 @@ export class UI {
       const st = b.state;
       if (b.fn === 'pump' || b.fn === 'condenser') h += st.active ? `<div class="safe">Working</div>` : `<div class="risk">Idle: must sit inside ${esc(b.fn === 'pump' ? L[5].name : L[0].name)}</div>`;
       else if (b.fn === 'smelter') h += `<div class="tt-dim">${st.recipe ? st.recipe.map((id) => materialById(g.planet, id).name).join(' + ') : 'No recipe'}</div>`;
-      else if (b.fn === 'lab') h += `<div class="tt-dim">${st.job ? this.jobName(st.job) : 'Idle'}</div>`;
       else if (b.fn === 'core') h += `<div class="tt-dim">${esc(f.desc)}</div>`;
       else if (b.layer >= 0 && b.layer <= 5) h += `<div class="tt-dim">In ${esc(L[b.layer].name)}</div>`;
       let dmg = 0,
@@ -1054,7 +1015,10 @@ export class UI {
           dmg = Math.max(dmg, e.damage);
           load = Math.max(load, e.need || 0);
         }
-      if (load > 1) h += `<div class="tt-dim">Heaviest joint: ${Math.round(load)} kN</div>`;
+      if (load > 1) {
+        const ks = g.knowledge.get(b.mat);
+        h += `<div class="tt-dim">Heaviest joint: ${Math.round(load)} kN · ${esc(b.mat.name)} known to hold ${this.strengthText(ks) === '?' ? '?' : this.strengthText(ks)}</div>`;
+      }
       if (dmg > 0.02) h += `<div class="${dmg > 0.5 ? 'fail' : 'risk'}">Joint damage ${Math.round(dmg * 100)}%</div>`;
       if (b.corroding) h += `<div class="fail">Corroding!</div>`;
       if (b.swell > 0.05) h += `<div class="risk">Swollen (+${Math.round(b.swell * 70)}% weight)</div>`;
@@ -1064,16 +1028,11 @@ export class UI {
     } else if (hv && hv.kind === 'wreck') {
       const s = hv.struct;
       const mats = [...new Set(s.list.map((b) => b.mat.name))].join(', ');
-      h = `<div class="tt-title">Wreckage<span class="tt-key">${s.list.length} block${s.list.length > 1 ? 's' : ''}</span></div><div class="tt-dim">${esc(mats)}</div>`;
-      if (s.list.length === 1 && s.list[0].fn === 'frame') {
-        const v = s.body.getLinearVelocity();
-        if (Math.hypot(v.x, v.y) < 0.5) {
-          const p = s.body.getWorldCenter();
-          const k = g.sea.layerAt(p.x, p.y, g.time);
-          h += `<div class="tt-dim">Settled in ${esc(L[Math.min(5, k)].name)}</div>`;
-          this.observeWreck(s);
-        }
-      }
+      h = s.cube ? `<div class="tt-title">Test cube<span class="tt-key">${esc(mats)}</span></div>` : `<div class="tt-title">Wreckage<span class="tt-key">${s.list.length} block${s.list.length > 1 ? 's' : ''}</span></div><div class="tt-dim">${esc(mats)}</div>`;
+      const cr = s.cube && s.cube.read;
+      if (cr && cr.est) h += `<div>Floats ${Math.round(cr.frac * 100)}% into ${esc(cr.lower.name)}: <b>≈ ${cr.est.toFixed(2)} t/m³</b></div>`;
+      else if (cr && cr.floor) h += `<div class="tt-dim">Sank to the floor: denser than ${esc(L[5].name)}</div>`;
+      else if (s.cube && !cr) h += `<div class="tt-dim">${this.game.experiments.near(s.body.getWorldCenter().x, s.body.getWorldCenter().y) ? 'Watching it settle…' : 'Too far away to watch'}</div>`;
       const reach = this.reachFor(s.body.getWorldCenter());
       h += reach.ok ? `<div class="tt-act">Click to salvage half its cost</div>` : `<div class="tt-dim">Out of reach (${reach.d.toFixed(0)} m)</div>`;
     }
@@ -1089,32 +1048,6 @@ export class UI {
     const r = tt.getBoundingClientRect();
     tt.style.left = `${Math.min(window.innerWidth - r.width - 8, this.mouse.x + 18)}px`;
     tt.style.top = `${Math.min(window.innerHeight - r.height - 8, this.mouse.y + 16)}px`;
-  }
-
-  /** A single jettisoned frame block resting at an interface brackets its material's density. */
-  observeWreck(s) {
-    if (s._observed) return;
-    const g = this.game;
-    const b = s.list[0];
-    const p = s.body.getWorldCenter();
-    const L = g.planet.layers;
-    const surf = g.sea.surfaceY(p.x, g.time);
-    if (Math.abs(p.y - surf) < 1) {
-      g.knowledge.densityInterval(b.mat, 0, L[3].rho, `a ${b.mat.name} block floats`);
-      s._observed = true;
-      return;
-    }
-    for (const k of [4, 5]) {
-      if (Math.abs(p.y - g.sea.ifaceY(k, p.x, g.time)) < 1) {
-        g.knowledge.densityInterval(b.mat, L[k - 1].rho, L[k].rho, `a ${b.mat.name} block settled there`);
-        s._observed = true;
-        return;
-      }
-    }
-    if (p.y < g.physics.floorAt(p.x) + 1.2) {
-      g.knowledge.densityInterval(b.mat, L[5].rho, Infinity, `a ${b.mat.name} block sank`);
-      s._observed = true;
-    }
   }
 
   reachFor(p) {
@@ -1142,6 +1075,14 @@ export class UI {
 
   updateGhost() {
     const g = this.game;
+    this.dropGhost = null;
+    if (this.tool === 'drop' && this.mouse.in && !this.tipEl && g.colony) {
+      const w = this.R.toWorld(this.mouse.x, this.mouse.y);
+      const chk = g.experiments.canDrop(this.mat, w.x, w.y);
+      const k = g.sea.layerAt(w.x, w.y, g.time);
+      const L = g.planet.layers;
+      this.dropGhost = { x: w.x, y: w.y, ok: chk.ok, reason: chk.reason, where: k <= 2 ? 'Dropped from the air' : `Lowered into ${L[Math.min(5, k)].name}` };
+    }
     if (this.tool !== 'build' || !this.mouse.in || !g.colony || this.tipEl) {
       this.ghost = null;
       return;
@@ -1219,6 +1160,12 @@ export class UI {
       return;
     }
     const w = this.R.toWorld(sx, sy);
+    if (this.tool === 'drop') {
+      if (drag) return;
+      const r = g.experiments.drop(this.mat, w.x, w.y);
+      if (!r.ok && r.reason) g.log(r.reason, 'warn');
+      return;
+    }
     const hv = this.pick(w.x, w.y);
     if (this.tool === 'dismantle') {
       if (hv && hv.kind === 'block') g.deconstruct(hv.ref);
@@ -1299,7 +1246,6 @@ export class UI {
       const want = b.fn === 'pump' ? 5 : 0;
       h += `<div class="note-small ${b.state.active ? 'safe' : 'risk'}">${b.state.active ? 'Working.' : `Idle: it sits in ${esc(L[Math.min(5, Math.max(0, b.layer))].name)}, needs ${esc(L[want].name)}.`}</div>`;
     }
-    if (b.fn === 'lab') h += `<div class="note-small">${b.state.job ? 'Running: ' + this.jobName(b.state.job) : 'Idle. Queue tests from the notebook.'}</div>`;
     if (b.fn !== 'core') h += `<div class="mp-row"><button class="mp-btn" data-repair data-tip="mp-patch">Patch</button><button class="mp-btn" data-jettison data-tip="mp-jettison">Jettison</button><button class="mp-btn" data-dismantle data-tip="mp-dismantle">Dismantle</button></div>`;
     $('module-panel').innerHTML = h;
   }
@@ -1451,6 +1397,58 @@ export class UI {
         ctx.setLineDash([]);
       }
       reset();
+    }
+
+    const dg = this.dropGhost;
+    if (dg && col && col.core) {
+      const cp = col.worldPos(col.core.gx, col.core.gy);
+      const a = R.toScreen(cp.x, cp.y);
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, GRAPPLE_REACH_CORE * z, 0, Math.PI * 2);
+      ctx.setLineDash([4, 6]);
+      ctx.strokeStyle = 'rgba(255,220,140,0.25)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const s = R.toScreen(dg.x, dg.y);
+      ctx.fillStyle = dg.ok ? 'rgba(255,255,255,0.14)' : 'rgba(255,80,80,0.16)';
+      ctx.fillRect(s.x - z / 2, s.y - z / 2, z, z);
+      ctx.strokeStyle = dg.ok ? 'rgba(255,255,255,0.85)' : 'rgba(255,90,90,0.9)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(s.x - z / 2, s.y - z / 2, z, z);
+    }
+
+    const wp = g.experiments.weighProgress();
+    if (wp !== null && col && col.core) {
+      const cp = col.worldPos(col.core.gx, col.core.gy);
+      const s = R.toScreen(cp.x, cp.y + 2.4);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 11, -Math.PI / 2, -Math.PI / 2 + wp * Math.PI * 2);
+      ctx.strokeStyle = 'rgba(207,232,255,0.9)';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.font = '600 12px "Manrope", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(207,232,255,0.95)';
+      ctx.fillText('⚖', s.x, s.y + 4);
+      ctx.fillStyle = 'rgba(207,232,255,0.7)';
+      ctx.font = '500 11px "Manrope", system-ui, sans-serif';
+      ctx.fillText('weighing', s.x, s.y + 26);
+    }
+
+    ctx.font = '600 11px "JetBrains Mono", monospace';
+    ctx.textAlign = 'left';
+    for (const s of g.structures) {
+      const cr = s.cube && s.cube.read;
+      if (!cr || (!cr.est && !cr.floor) || s.list.length !== 1) continue;
+      const p = s.body.getWorldCenter();
+      const q = R.toScreen(p.x + 0.7, p.y + 0.2);
+      if (q.x < -50 || q.x > R.cssW + 50 || q.y < -20 || q.y > R.cssH + 20) continue;
+      const txt = cr.est ? `${s.list[0].mat.name} ≈ ${cr.est.toFixed(2)}` : `${s.list[0].mat.name}: sank`;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillText(txt, q.x + 1, q.y + 1);
+      ctx.fillStyle = 'rgba(255,240,210,0.9)';
+      ctx.fillText(txt, q.x, q.y);
     }
 
     const gh = this.ghost;

@@ -226,30 +226,6 @@ export function functionIcon(fn) {
       ctx.stroke();
       break;
     }
-    case 'lab': {
-      plate(8, 8);
-      ctx.fillStyle = 'rgba(120,255,200,0.85)';
-      ctx.beginPath();
-      ctx.moveTo(22, 46);
-      ctx.lineTo(42, 46);
-      ctx.lineTo(36, 34);
-      ctx.lineTo(28, 34);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = light;
-      S(3);
-      ctx.beginPath();
-      ctx.moveTo(28, 16);
-      ctx.lineTo(28, 30);
-      ctx.lineTo(19, 48);
-      ctx.lineTo(45, 48);
-      ctx.lineTo(36, 30);
-      ctx.lineTo(36, 16);
-      ctx.moveTo(25, 16);
-      ctx.lineTo(39, 16);
-      ctx.stroke();
-      break;
-    }
     case 'smelter': {
       plate(7, 6);
       ctx.fillStyle = '#2a1a14';

@@ -225,6 +225,9 @@ export class Renderer {
           }
           break;
         }
+        case 'popup':
+          this.popups.push({ x: f.x, y: f.y, text: f.text, t: 0, color: f.color || '#ffe4a8', life: f.life || 1.6 });
+          break;
         case 'dissolve':
           P.burst(f.x, f.y, 20, { speed: 1, life: 2, size: 0.08, color: [1, 1, 1], kind: 'bubble' });
           break;
@@ -401,13 +404,6 @@ export class Renderer {
         const k = 0.5 + 0.5 * Math.sin(t * 9 + b.id);
         ctx.fillStyle = `rgba(255,${120 + 60 * k},40,${0.25 + 0.2 * k})`;
         ctx.fillRect(x + 0.2, y + 0.2, 0.6, 0.35);
-      }
-      if (fn === 'lab' && b.state.job) {
-        const k = 0.5 + 0.5 * Math.sin(t * 6);
-        ctx.fillStyle = `rgba(120,255,190,${0.3 + 0.4 * k})`;
-        ctx.beginPath();
-        ctx.arc(b.gx + 0.3, b.gy + 0.32, 0.07, 0, Math.PI * 2);
-        ctx.fill();
       }
       if (fn === 'core') {
         const k = Math.sin(t * 2.4) > 0.6 ? 1 : 0.2;
@@ -873,12 +869,12 @@ export class Renderer {
     if (ui && ui.drawWorldOverlay) ui.drawWorldOverlay(ctx, this);
     this.drawRuler(ctx, game, ui);
     for (const p of this.popups) p.t += dt;
-    this.popups = this.popups.filter((p) => p.t < 1.6);
+    this.popups = this.popups.filter((p) => p.t < (p.life || 1.6));
     ctx.textAlign = 'center';
     ctx.font = '600 13px "Manrope", system-ui, sans-serif';
     for (const p of this.popups) {
       const s = this.toScreen(p.x, p.y);
-      const a = Math.min(1, (1.6 - p.t) * 2);
+      const a = Math.min(1, ((p.life || 1.6) - p.t) * 2);
       ctx.globalAlpha = a;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillText(p.text, s.x + 1, s.y - p.t * 26 + 1);

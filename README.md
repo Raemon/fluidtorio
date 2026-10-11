@@ -17,7 +17,7 @@ You start with almost nothing: a raft, a grapple, some salvage, and two kinds of
 
 | When | You get |
 |---|---|
-| your first unknown sample comes aboard | the notebook, the Lab and the density lens |
+| your first unknown sample comes aboard | the notebook, the Drop tool and the density lens |
 | you try to grab something out of reach, or haul a few loads | the Crane |
 | a keel (or a chunk hauled up from the deep) touches the fuel layer | the Pump |
 | a tower breaks into the oxidiser sky | the Condenser |
@@ -33,11 +33,12 @@ Every HUD element has a short tooltip. The two numbers that matter most are alwa
 
 - **Floating is physics.** Each block displaces fluid in every layer it touches (Archimedes, per block, per layer). Rafts heel, and tall towers capsize light rafts. A heavy keel stabilises you, while a buoyant keel tries to flip you.
 - **Load is physics too.** Weight is routed through welded joints to whatever holds it up, using a graph-Laplacian load-path solver. Joints carry vertical load well and sideways load poorly. Overloaded joints creak, crack, glow and snap, and the pieces fall into the sea. Ductile materials warn you early; brittle ones barely warn at all.
-- **You only know what you've observed.** The notebook keeps each property as an interval. Several things narrow it:
-  - where a material's chunks float, and their waterline
-  - loads its joints have held, and where they cracked
-  - whether it fizzes in a layer
-  - lab tests, which are exact but cost samples and time
+- **You only know what you've seen happen.** There is no lab and no datasheet. The notebook keeps each property as an interval, and hovering a property lists the experiments behind it. You narrow it with physical experiments, each with its own costs and noise:
+  - **Drop a test cube.** It shows where the material settles between the liquids, and how deep it floats (a cube floating at an interface is a hydrometer). It also shows what it does in every layer it sinks through.
+  - **Weigh on the deck.** Every block you add pushes the raft down, so the raft is a scale. Weigh several blocks of one material at once, solid rather than hollow, in calm water. Put two unknowns on together and you can't tell which weighs what. A known material on the scale with an unknown one still works.
+  - **Load joints.** Joints that hold set a floor on strength; joints that crack or snap set a ceiling. Dense blocks stacked on a test joint load it fastest. Brittle materials barely warn you.
+  - **Leave something in a layer.** Corrosion and swelling show at once, and a few calm seconds with no reaction means inert.
+  - **Smelt a pair.** It's the only way to learn an alloy, and some pairs explode. Smelt untested pairs on a limb, away from the core. Each result constrains the hidden rule behind every other pair.
 - **Forecasts are built from what you know.** The stress view, build previews and the launch forecast use only your knowledge. Green means certainly fine, amber means it depends on what you don't know yet, and red means certain failure.
 - **Retrying keeps your notebook.** Try the same planet again and your notebook carries over, so a failed run is still an experiment.
 
@@ -52,6 +53,7 @@ The world is drawn from its density field. Each frame, the objects and heat sour
 | | |
 |---|---|
 | Hover anything | a short explanation |
+| <kbd>G</kbd>, then click open water | drop a test cube |
 | Click chunk / wreck | grapple it in |
 | <kbd>1</kbd>–<kbd>0</kbd>, <kbd>T</kbd>, <kbd>C</kbd> | pick a block to build |
 | <kbd>Q</kbd> / <kbd>E</kbd> | cycle material |
