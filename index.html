@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fluidtorio</title>
+    <meta name="description" content="Build a floating colony on a sea of unknown liquids. Test your materials, keep your towers standing, and launch before the volcano erupts." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="gl"></canvas>
+      <canvas id="overlay"></canvas>
+
+      <div id="hud" class="hidden">
+        <div id="brand" class="panel">
+          <div class="brand-row">
+            <span class="wordmark">FLUIDTORIO</span>
+            <button id="btn-help" class="icon-btn" title="How to play (H)">?</button>
+          </div>
+          <div class="speed-row">
+            <button class="speed" data-speed="0" title="Pause (Space)">❚❚</button>
+            <button class="speed" data-speed="1" title="Normal speed">▶</button>
+            <button class="speed" data-speed="2" title="Fast (2×)">▶▶</button>
+            <button class="speed" data-speed="4" title="Faster (4×)">▶▶▶</button>
+          </div>
+          <div class="view-row">
+            <button id="btn-lens" class="toggle" title="Hold Shift: schlieren lens. See density.">◎ Lens</button>
+            <button id="btn-schl" class="toggle" title="Tab: whole-screen schlieren view">▦ Schlieren</button>
+            <button id="btn-stress" class="toggle" title="V: predicted joint stress, from what you know">⌁ Stress</button>
+          </div>
+        </div>
+
+        <div id="countdown" class="panel">
+          <div class="cd-label">MOUNT <span id="volcano-name">IGNIS</span> ERUPTS IN</div>
+          <div id="cd-time">28:00</div>
+          <div class="cd-bar"><div id="cd-fill"></div></div>
+          <div id="tremor-warn" class="hidden">⚠ SWELL INCOMING</div>
+        </div>
+
+        <div id="objectives" class="panel"></div>
+
+        <div id="palette" class="panel"></div>
+
+        <div id="log"></div>
+
+        <div id="materials" class="panel">
+          <div id="mat-chips"></div>
+          <div id="resources"></div>
+        </div>
+
+        <div id="status" class="panel"></div>
+
+        <div id="journal" class="panel">
+          <div class="j-tabs">
+            <button class="j-tab active" data-tab="mats">Materials</button>
+            <button class="j-tab" data-tab="alloys">Alloys</button>
+            <button class="j-tab" data-tab="lab">Lab <span id="lab-count"></span></button>
+            <button id="j-collapse" class="icon-btn" title="Notebook (N)">›</button>
+          </div>
+          <div id="j-body"></div>
+        </div>
+        <button id="journal-open" class="panel hidden" title="Notebook (N)">‹ Notebook</button>
+
+        <div id="module-panel" class="panel hidden"></div>
+        <div id="tooltip" class="hidden"></div>
+      </div>
+
+      <section id="title" class="screen">
+        <div class="title-card">
+          <div class="kicker">A game of buoyancy, load paths and experiments</div>
+          <h1>FLUIDTORIO</h1>
+          <p class="lede">
+            Your lander broke up over <b>Strata</b>, a world of stacked, unmixing seas under a waking volcano. Build a floating colony out of materials no one has
+            ever tested. Reach down into the fuel deep and up into the oxidiser sky, and launch before the mountain does.
+          </p>
+          <p class="lede small">
+            Nothing here comes with a datasheet. Every chunk you haul in, every joint that creaks, every tower that falls tells you something. The fastest
+            way off this planet is to learn fast.
+          </p>
+          <div class="row">
+            <label>Planet seed <input id="seed-input" spellcheck="false" maxlength="10" /></label>
+            <button id="seed-random" class="ghost-btn" title="New random planet">↻</button>
+          </div>
+          <div class="row diff" id="diff-row">
+            <button data-diff="relaxed">Relaxed · 40 min</button>
+            <button data-diff="standard" class="active">Standard · 28 min</button>
+            <button data-diff="harrowing">Harrowing · 19 min</button>
+          </div>
+          <div class="row">
+            <button id="btn-start" class="primary">Make landfall</button>
+            <button id="btn-howto" class="ghost-btn">How to play</button>
+          </div>
+          <div class="fine">Hold <kbd>Shift</kbd> anywhere to look through a schlieren lens: it shows density itself.</div>
+        </div>
+      </section>
+
+      <section id="help" class="screen hidden">
+        <div class="help-card panel">
+          <button class="close-help icon-btn">×</button>
+          <h2>Field manual</h2>
+          <div class="help-grid">
+            <div>
+              <h3>The goal</h3>
+              <p>Launch a rocket that clears <b>260 m</b> before the countdown ends. It needs <b>propellant</b>: fuel pumped from the deepest liquid layer, mixed with oxidiser condensed from the highest air layer.</p>
+              <h3>Floating</h3>
+              <p>Every block displaces fluid. Fluid pushes up with the weight of what's displaced (Archimedes). <b>Floats</b> are hollow: light and buoyant, but weak, and they flood if cracked. A heavy, deep <b>keel</b> keeps a tall tower from capsizing. A buoyant keel pushes up and wants to flip you.</p>
+              <h3>Load</h3>
+              <p>Weight flows down through joints to whatever holds it up. Joints carry vertical load well and sideways load poorly. Overloaded joints <b>creak and crack</b>, and break if you don't relieve them: remove load, add a parallel column, or patch them (<kbd>R</kbd>). Ductile materials warn you early. Brittle ones barely warn you at all.</p>
+            </div>
+            <div>
+              <h3>Knowing things</h3>
+              <p>Material properties are hidden. The <b>Notebook</b> keeps the range each one could still be in. You learn by:</p>
+              <ul>
+                <li>where its chunks float (density bracket), and their waterline (hover a resting chunk)</li>
+                <li>loads its joints have held, and the load where they cracked</li>
+                <li>whether it fizzes in a layer (reaction)</li>
+                <li>Lab tests: exact, but they cost samples and time</li>
+              </ul>
+              <p>The <b>Stress view</b> (<kbd>V</kbd>) and build previews use only what you know. <span class="safe">Green</span> means certainly fine, <span class="risk">amber</span> means it depends on what you don't know yet, and <span class="fail">red</span> means certain failure.</p>
+              <h3>Alloys</h3>
+              <p>A Smelter fuses two raw materials. The outcome follows a hidden rule about each material's temper. Some pairs are superb, some are ordinary, some crumble, and one kind of pair explodes. Crucible tests in a Lab are the safe way to find out.</p>
+            </div>
+            <div>
+              <h3>Controls</h3>
+              <table class="keys">
+                <tr><td>Click chunk / wreck</td><td>haul it in with a grapple</td></tr>
+                <tr><td><kbd>1</kbd>–<kbd>0</kbd> <kbd>T</kbd> <kbd>C</kbd></td><td>pick a block to build</td></tr>
+                <tr><td><kbd>Q</kbd> <kbd>E</kbd></td><td>cycle material</td></tr>
+                <tr><td>Click / drag</td><td>place blocks</td></tr>
+                <tr><td>Right-click block</td><td>dismantle (75% back)</td></tr>
+                <tr><td><kbd>R</kbd> / <kbd>J</kbd> / <kbd>X</kbd></td><td>repair / jettison / dismantle tool</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>back to pointer</td></tr>
+                <tr><td>Right-drag, <kbd>WASD</kbd></td><td>pan</td></tr>
+                <tr><td>Wheel</td><td>zoom</td></tr>
+                <tr><td><kbd>F</kbd></td><td>find the colony</td></tr>
+                <tr><td><kbd>Space</kbd>, <kbd>,</kbd> <kbd>.</kbd></td><td>pause, slower, faster</td></tr>
+                <tr><td>Hold <kbd>Shift</kbd></td><td>schlieren lens</td></tr>
+                <tr><td><kbd>Tab</kbd> / <kbd>V</kbd></td><td>schlieren view / stress view</td></tr>
+                <tr><td><kbd>N</kbd></td><td>notebook</td></tr>
+                <tr><td><kbd>M</kbd></td><td>mute</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="end" class="screen hidden">
+        <div class="end-card panel">
+          <div class="kicker" id="end-kicker"></div>
+          <h2 id="end-title"></h2>
+          <p id="end-text"></p>
+          <div id="end-stats"></div>
+          <div class="row">
+            <button id="btn-retry" class="primary">Same planet again</button>
+            <button id="btn-new" class="ghost-btn">New planet</button>
+            <button id="btn-linger" class="ghost-btn">Keep watching</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="nogl" class="screen hidden">
+        <div class="end-card panel">
+          <h2>WebGL 2 is unavailable</h2>
+          <p>Fluidtorio draws its sea on the GPU. Try a current Chrome, Edge, Firefox or Safari with hardware acceleration turned on.</p>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
