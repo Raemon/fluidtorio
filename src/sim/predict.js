@@ -126,22 +126,22 @@ export function classify(p) {
   return 'risk';
 }
 
+/** Mass, heel, and spare buoyancy: how many tonnes the raft can take before its waterline rows go under. */
 export function colonyStatus(game) {
   const col = game.colony;
   if (!col) return null;
   const t = game.time;
+  const rho1 = game.planet.layers[SURFACE].rho;
   let mass = 0,
-    capacity = 0,
-    wet = 0;
+    reserve = 0;
   for (const b of col.list) {
     mass += b.mass;
     const p = col.worldPos(b.gx, b.gy);
-    const k = Math.max(SURFACE, Math.min(5, game.sea.layerAt(p.x, Math.min(p.y, game.sea.surfaceY(p.x, t) - 0.01), t)));
-    capacity += game.planet.layers[k].rho;
-    wet += b.wet;
+    const surf = game.sea.surfaceY(p.x, t);
+    if (p.y - surf < 1.1 && b.wet < 0.999 && b.fn !== 'core') reserve += rho1 * (1 - b.wet);
   }
   const ang = col.body.getAngle();
-  return { mass, reserve: capacity - mass, heel: ((ang + Math.PI) % (2 * Math.PI)) - Math.PI, blocks: col.list.length };
+  return { mass, reserve, heel: ((ang + Math.PI) % (2 * Math.PI)) - Math.PI, blocks: col.list.length };
 }
 
 /** Flight forecast for the rocket currently stacked on the pads. */

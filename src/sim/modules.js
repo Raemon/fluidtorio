@@ -105,7 +105,7 @@ export class Modules {
   setRecipe(b, aId, bId) {
     const g = this.game;
     const st = b.state;
-    st.recipe = aId && bId ? [aId, bId] : null;
+    st.recipe = aId && bId && aId !== bId ? [aId, bId] : null;
     st.t = 0;
     st.phase = 'idle';
     g.emit('modules');
@@ -119,6 +119,11 @@ export class Modules {
       return;
     }
     const [ma, mb] = st.recipe.map((id) => materialById(g.planet, id));
+    if (!ma || !mb || ma === mb || ma.kind !== 'raw' || mb.kind !== 'raw') {
+      st.recipe = null;
+      st.phase = 'idle';
+      return;
+    }
     if (st.phase !== 'heating') {
       if (g.stockOf(ma.id) >= 3 && g.stockOf(mb.id) >= 3) {
         g.addStock(ma.id, -3);

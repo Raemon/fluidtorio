@@ -284,6 +284,7 @@ export class UI {
     cd.classList.toggle('urgent', left < 180);
     $('cd-fill').style.width = `${Math.min(100, (g.time / g.duration) * 100)}%`;
     $('tremor-warn').classList.toggle('hidden', !(g.tremorWarned && g.time < g.tremorAt));
+    $('paused-tag').classList.toggle('hidden', !this.app.paused);
     const now = performance.now();
     for (const el of this.logEls) {
       const age = (now - el._born) / 1000;
@@ -642,12 +643,12 @@ export class UI {
     if (!st) return;
     const deg = (st.heel * 180) / Math.PI;
     const heelCls = Math.abs(deg) > 25 ? 'bad' : Math.abs(deg) > 10 ? 'warn' : '';
-    const resCls = st.reserve < 2 ? 'bad' : st.reserve < 6 ? 'warn' : '';
+    const resCls = st.reserve < 1 ? 'bad' : st.reserve < 3 ? 'warn' : '';
     let worst = 0;
     if (g.colony) for (const b of g.colony.list) for (const d of [0, 1]) if (b.edges[d]) worst = Math.max(worst, b.edges[d].damage);
     let h = `<div class="st-head">COLONY</div>`;
     h += `<div class="st-row"><span class="k">Mass</span><span class="v">${st.mass.toFixed(1)} t · ${st.blocks} blocks</span></div>`;
-    h += `<div class="st-row"><span class="k">Reserve buoyancy</span><span class="v ${resCls}">${st.reserve >= 0 ? '+' : ''}${st.reserve.toFixed(1)} t</span></div>`;
+    h += `<div class="st-row" title="How many more tonnes the raft can carry before its waterline blocks go under"><span class="k">Spare buoyancy</span><span class="v ${resCls}">${st.reserve.toFixed(1)} t</span></div>`;
     h += `<div class="st-row"><span class="k">Heel</span><span class="v ${heelCls}">${deg.toFixed(1)}°</span></div>`;
     h += `<div class="heel"><i style="left:calc(${50 + Math.max(-50, Math.min(50, (deg / 45) * 50))}% - 1px)"></i></div>`;
     if (worst > 0.05) h += `<div class="st-row"><span class="k">Worst joint damage</span><span class="v ${worst > 0.5 ? 'bad' : 'warn'}">${Math.round(worst * 100)}%</span></div>`;
@@ -922,6 +923,18 @@ export class UI {
           : worst === 'fail'
             ? { cls: 'fail', text: 'Something will certainly give way.' }
             : { cls: 'risk', text: 'Some joints might fail. It depends on what you don’t know yet.' };
+      const st = colonyStatus(g);
+      const kd = g.knowledge.get(mat).d;
+      const fnd = FUNCS[this.fn];
+      const gp = g.colony.worldPos(c.gx, c.gy);
+      const above = gp.y - g.sea.surfaceY(gp.x, g.time);
+      const wetNow = Math.max(0, Math.min(1, 0.5 - above));
+      const kLay = Math.max(3, Math.min(5, g.sea.layerAt(gp.x, Math.min(gp.y, g.sea.surfaceY(gp.x, g.time) - 0.01), g.time)));
+      const lift = g.planet.layers[kLay].rho * wetNow + (above < 1.1 ? g.planet.layers[3].rho * (1 - wetNow) : 0);
+      const addHi = kd[1] * fnd.fill + fnd.equip - lift;
+      const addLo = kd[0] * fnd.fill + fnd.equip - lift;
+      if (st && addLo > 0 && st.reserve - addLo < 0.2) gh.summary = { cls: 'fail', text: `This would push the deck under (spare buoyancy ${st.reserve.toFixed(1)} t). Add floats first.` };
+      else if (st && addHi > 0 && st.reserve - addHi < 1) gh.summary = { cls: 'risk', text: kd[1] >= D_PRIOR[1] ? `If ${mat.name} is dense, this could sink the raft (${st.reserve.toFixed(1)} t spare).` : `The raft is nearly out of buoyancy (${st.reserve.toFixed(1)} t spare).` };
       if (this.fn === 'pump' || this.fn === 'condenser') {
         const p = g.colony.worldPos(c.gx, c.gy);
         const k = g.sea.layerAt(p.x, p.y, g.time);

@@ -40,6 +40,7 @@
           <div id="cd-time">28:00</div>
           <div class="cd-bar"><div id="cd-fill"></div></div>
           <div id="tremor-warn" class="hidden">⚠ SWELL INCOMING</div>
+          <div id="paused-tag" class="hidden">PAUSED · you can still build</div>
         </div>
 
         <div id="objectives" class="panel"></div>
@@ -106,7 +107,7 @@
           <div class="help-grid">
             <div>
               <h3>The goal</h3>
-              <p>Launch a rocket that clears <b>260 m</b> before the countdown ends. It needs <b>propellant</b>: fuel pumped from the deepest liquid layer, mixed with oxidiser condensed from the highest air layer.</p>
+              <p>Launch a rocket that reaches <b>escape speed (170 m/s)</b> before the countdown ends. It needs <b>propellant</b>: fuel pumped from the deepest liquid layer, mixed with oxidiser condensed from the highest air layer. Every tonne of rocket has to be pushed, so light, strong tanks matter.</p>
               <h3>Floating</h3>
               <p>Every block displaces fluid. Fluid pushes up with the weight of what's displaced (Archimedes). <b>Floats</b> are hollow: light and buoyant, but weak, and they flood if cracked. A heavy, deep <b>keel</b> keeps a tall tower from capsizing. A buoyant keel pushes up and wants to flip you.</p>
               <h3>Load</h3>
@@ -156,7 +157,7 @@
           <p id="end-text"></p>
           <div id="end-stats"></div>
           <div class="row">
-            <button id="btn-retry" class="primary">Same planet again</button>
+            <button id="btn-retry" class="primary" title="Your notebook carries over">Same planet, keep notebook</button>
             <button id="btn-new" class="ghost-btn">New planet</button>
             <button id="btn-linger" class="ghost-btn">Keep watching</button>
           </div>

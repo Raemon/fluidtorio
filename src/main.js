@@ -78,22 +78,25 @@ class App {
   startAttract() {
     const g = new Game({ seed: 4242 + Math.floor(Math.random() * 1000), attract: true });
     const col = g.colony;
+    const S = g.planet.salvage;
     const mats = g.planet.materials;
     for (const m of mats) g.addStock(m.id, 999);
     g.addStock('salvage', 999);
-    const keelMat = mats.slice().sort((a, b) => Math.abs(a.d - 1.6) - Math.abs(b.d - 1.6))[0];
-    for (let x = 5; x <= 8; x++) {
-      g.place(x, -1, 'hollow', g.planet.salvage);
-      g.place(-x, -1, 'hollow', g.planet.salvage);
-      g.place(x, 0, 'hollow', g.planet.salvage);
-      g.place(-x, 0, 'hollow', g.planet.salvage);
+    for (let x = 5; x <= 9; x++)
+      for (const y of [-1, 0]) {
+        g.place(x, y, 'hollow', S);
+        g.place(-x, y, 'hollow', S);
+      }
+    for (let y = -2; y >= -6; y--) g.place(0, y, 'frame', S);
+    g.place(0, -7, 'crane', S);
+    g.place(-3, 1, 'lab', S);
+    g.place(3, 1, 'smelter', S);
+    for (const x of [-7, 7]) {
+      for (let y = 1; y <= 5; y++) g.place(x, y, y < 3 ? 'frame' : 'hollow', S);
+      g.place(x, 6, 'crane', S);
     }
-    for (let y = -2; y >= -7; y--) g.place(0, y, 'frame', keelMat);
-    g.place(0, -8, 'crane', keelMat);
-    g.place(-3, 1, 'lab', g.planet.salvage);
-    g.place(3, 1, 'smelter', g.planet.salvage);
-    for (let y = 1; y <= 7; y++) g.place(-6, y, y < 5 ? 'frame' : 'hollow', g.planet.salvage);
-    g.place(-6, 8, 'crane', g.planet.salvage);
+    g.place(-1, 1, 'refinery', S);
+    g.place(1, 1, 'frame', S);
     let pair = null;
     for (let i = 0; i < mats.length && !pair; i++)
       for (let j = i + 1; j < mats.length && !pair; j++) if (pairOutcome(g.planet, mats[i], mats[j]) !== 'volatile') pair = [mats[i].id, mats[j].id];
@@ -133,7 +136,7 @@ class App {
     $('help').addEventListener('click', (e) => {
       if (e.target === $('help')) this.showHelp(false);
     });
-    $('btn-retry').addEventListener('click', () => this.startGame());
+    $('btn-retry').addEventListener('click', () => this.startGame(true));
     $('btn-new').addEventListener('click', () => {
       this.seed = randomSeed();
       $('seed-input').value = String(this.seed);
@@ -145,10 +148,12 @@ class App {
     });
   }
 
-  startGame() {
+  startGame(keepNotebook = false) {
     this.audio.init();
     this.audio.setMuted(this.muted);
+    const prev = keepNotebook && this.game && !this.game.attract && this.game.seed === this.seed ? this.game.knowledge : null;
     const g = new Game({ seed: this.seed, difficulty: this.difficulty });
+    if (prev) g.knowledge.importFrom(prev);
     this.game = g;
     g.on('sfx', (s) => this.audio.play(s.name, s));
     g.on('end', (e) => setTimeout(() => this.showEnd(e), e.won ? 3200 : 1200));
@@ -170,12 +175,12 @@ class App {
     $('end').classList.add('hidden');
     $('hud').classList.remove('hidden');
     g.log(`Landfall on Strata. Mount ${g.volcanoName()} is waking. Haul in what drifts past and learn what it's made of.`, 'info');
+    if (prev) g.log('Your notebook from the last attempt survived. Same planet, same materials.', 'good');
     this.click();
   }
 
   showHelp(on) {
     $('help').classList.toggle('hidden', !on);
-    if (on && this.mode === 'play') this.paused = true;
     this.syncSpeedButtons();
     this.click();
   }
@@ -191,7 +196,7 @@ class App {
     const learned = known.filter((k) => k.d[1] / k.d[0] < 1.1 && k.s[1] / k.s[0] < 1.3).length;
     $('end-text').textContent = won
       ? `With ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')} to spare. Everything you flew on, you learned on the way.`
-      : `You pinned down ${learned} of ${known.length} materials before the end. Same planet, same materials: what you know now carries over to the next attempt.`;
+      : `You pinned down ${learned} of ${known.length} materials. Try the same planet again and your notebook comes with you: same materials, same fluids, and everything you learned this time.`;
     const stats = [
       ['Chunks hauled', g.stats.chunks],
       ['Lab tests', g.stats.tests],
@@ -390,9 +395,27 @@ class App {
 
   // ───────────────────────────── loop
 
+  adaptQuality(rawDt) {
+    const R = this.renderer;
+    this.frameEma = this.frameEma === undefined ? 1 / 60 : this.frameEma * 0.95 + rawDt * 0.05;
+    this.qT = (this.qT || 0) + rawDt;
+    if (this.qT < 2.5 || document.hidden) return;
+    if (this.frameEma > 1 / 38 && R.quality > 0.5) {
+      R.quality = Math.max(0.5, R.quality - 0.15);
+      R.resize();
+      this.qT = 0;
+    } else if (this.frameEma < 1 / 57 && R.quality < 1 && this.qT > 8) {
+      R.quality = Math.min(1, R.quality + 0.1);
+      R.resize();
+      this.qT = 0;
+    }
+  }
+
   loop(now) {
-    const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
+    const rawDt = Math.max(0, (now - this.last) / 1000);
+    const dt = Math.min(0.1, rawDt);
     this.last = now;
+    if (rawDt < 0.5) this.adaptQuality(rawDt);
     const g = this.game;
     const R = this.renderer;
     const cam = R.cam;
@@ -404,11 +427,11 @@ class App {
         this.acc -= DT;
         n++;
       }
-      cam.x = 4 + Math.sin(now / 9000) * 6;
+      cam.x = -10 + Math.sin(now / 9000) * 4;
       cam.y = -1 + Math.sin(now / 13000) * 5;
       R.lens.target = 1;
-      R.lens.x = window.innerWidth * (0.62 + 0.16 * Math.sin(now / 3100));
-      R.lens.y = window.innerHeight * (0.52 + 0.2 * Math.sin(now / 4700));
+      R.lens.x = window.innerWidth * (0.66 + 0.14 * Math.sin(now / 3100));
+      R.lens.y = window.innerHeight * (0.62 + 0.12 * Math.sin(now / 4700));
       R.lens.r = Math.min(220, window.innerHeight * 0.2);
     } else {
       if (!this.paused && $('help').classList.contains('hidden')) {

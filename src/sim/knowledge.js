@@ -1,4 +1,4 @@
-import { pairKey } from './gen.js';
+import { pairKey, getAlloy, materialById } from './gen.js';
 
 export const D_PRIOR = [0.05, 6];
 export const S_PRIOR = [10, 4000];
@@ -17,6 +17,30 @@ export class Knowledge {
     this.inferred = new Map();
     this.ensure(this.planet.salvage, true);
     for (const m of this.planet.materials) this.ensure(m);
+  }
+
+  /** Carry a previous attempt's notebook onto the same planet. */
+  importFrom(old) {
+    const planet = this.planet;
+    for (const [id, k] of old.mats) {
+      let mat = materialById(planet, id);
+      if (!mat && k.mat.kind === 'alloy') {
+        const [a, b] = k.mat.parents.map((p) => materialById(planet, p));
+        mat = a && b ? getAlloy(planet, a, b) : null;
+      }
+      if (!mat || mat.kind === 'salvage') continue;
+      const n = this.ensure(mat);
+      n.seen = k.seen;
+      n.d = k.d.slice();
+      n.s = k.s.slice();
+      n.b = k.b;
+      n.bHint = k.bHint;
+      n.react = k.react.slice();
+      n.firstCrack = k.firstCrack;
+      n.firstBreak = k.firstBreak;
+    }
+    for (const [key, o] of old.pairs) this.pairs.set(key, o);
+    this.infer();
   }
 
   ensure(mat, exact = false) {

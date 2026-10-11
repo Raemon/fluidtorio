@@ -209,6 +209,13 @@ kbd {
   color: var(--magma);
   animation: pulse 0.7s infinite alternate;
 }
+#paused-tag {
+  margin-top: 6px;
+  font-weight: 800;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--ox);
+}
 @keyframes pulse {
   from {
     opacity: 0.45;
@@ -969,9 +976,12 @@ body.journal-closed #status {
   text-transform: uppercase;
 }
 .title-card h1 {
+  display: inline-block;
+  white-space: nowrap;
+  padding-right: 0.1em;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: clamp(40px, 6.2vw, 80px);
+  font-size: clamp(38px, 5.6vw, 76px);
   letter-spacing: 0.03em;
   line-height: 0.95;
   margin: 10px 0 16px;
