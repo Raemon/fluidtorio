@@ -37,7 +37,7 @@ export const FUNCS = {
     fill: 1,
     equip: 0,
     sMul: 1,
-    cost: 4,
+    cost: 3,
     salvage: 0,
     desc: 'Solid block. Full weight, full strength. Heavy below the waterline makes a stabilising keel.',
   },

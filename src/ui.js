@@ -262,10 +262,18 @@ export class UI {
   // ───────────────────────────── logging
 
   addLog(e) {
+    const last = this.logEls[this.logEls.length - 1];
+    if (last && last._text === e.text && performance.now() - last._born < 6000) {
+      last._n = (last._n || 1) + 1;
+      last._born = performance.now();
+      last.querySelector('.log-n').textContent = ` ×${last._n}`;
+      return;
+    }
     const el = document.createElement('div');
     el.className = `log-line ${e.kind}`;
     const dot = e.mat ? `<span class="mat-dot" style="background:${toCss(e.mat.color)}"></span>` : '';
-    el.innerHTML = dot + esc(e.text);
+    el.innerHTML = dot + esc(e.text) + '<span class="log-n"></span>';
+    el._text = e.text;
     $('log').appendChild(el);
     this.logEls.push(el);
     el._born = performance.now();
@@ -297,9 +305,19 @@ export class UI {
       this.dirty.objectives = true;
       if (this.tab === 'lab') this.dirty.journal = true;
     }
-    if (this.dirty.chips) this.renderChips();
-    if (this.dirty.palette) this.renderPalette();
-    if (this.dirty.journal && this.journalOpen) this.renderJournal();
+    const nowMs = performance.now();
+    if (this.dirty.chips && nowMs - (this.chipsAt || 0) > 150) {
+      this.chipsAt = nowMs;
+      this.renderChips();
+    }
+    if (this.dirty.palette && nowMs - (this.paletteAt || 0) > 200) {
+      this.paletteAt = nowMs;
+      this.renderPalette();
+    }
+    if (this.dirty.journal && this.journalOpen && nowMs - (this.journalAt || 0) > 300) {
+      this.journalAt = nowMs;
+      this.renderJournal();
+    }
     if (this.dirty.objectives) this.renderObjectives();
     if (this.dirty.status) this.renderStatus();
     this.updateHover(dt);
@@ -336,7 +354,11 @@ export class UI {
     for (const [id, glyph, name, key] of TOOLS) {
       h += `<button class="tool ${this.tool === id ? 'active' : ''}" data-tool="${id}"><span class="glyph">${glyph}</span><span class="tname">${name}</span><span class="tkey">${key}</span></button>`;
     }
-    $('palette').innerHTML = h;
+    const el = $('palette');
+    if (el._h !== h) {
+      el.innerHTML = h;
+      el._h = h;
+    }
   }
 
   renderChips() {
@@ -356,13 +378,21 @@ export class UI {
       h += `<button class="chip ${active ? 'active' : ''}" data-mat="${m.id}" title="${esc(m.name)}"><img src="${this.swatch(m)}" alt=""><span class="cname">${esc(m.name)}</span><span class="ccount">${g.stockOf(m.id)}</span></button>`;
     }
     for (let i = 0; i < unseen; i++) h += `<div class="chip unseen" title="An undiscovered material is drifting somewhere out there"><span class="sw" style="background:repeating-linear-gradient(45deg,#222 0 4px,#333 4px 8px)"></span><span class="cname">???</span></div>`;
-    $('mat-chips').innerHTML = h;
+    const chipsEl = $('mat-chips');
+    if (chipsEl._h !== h) {
+      chipsEl.innerHTML = h;
+      chipsEl._h = h;
+    }
     const res = [
       ['fuel', 'fuel', g.stockOf('fuel')],
       ['ox', 'oxidiser', g.stockOf('ox')],
       ['prop', 'propellant', g.stockOf('prop')],
     ];
-    $('resources').innerHTML = res.map(([c, l, v]) => `<div class="res r-${c}"><span class="rv">${v}</span><span class="rl">${l}</span></div>`).join('');
+    const rh = res.map(([c, l, v]) => `<div class="res r-${c}"><span class="rv">${v}</span><span class="rl">${l}</span></div>`).join('');
+    if ($('resources')._h !== rh) {
+      $('resources').innerHTML = rh;
+      $('resources')._h = rh;
+    }
   }
 
   // ───────────────────────────── journal
@@ -375,10 +405,12 @@ export class UI {
     const busy = labs.filter((l) => l.state.job).length + g.modules.queue.length;
     $('lab-count').textContent = busy ? `(${busy})` : '';
     const scroll = body.scrollTop;
-    if (this.tab === 'mats') body.innerHTML = this.matsHTML();
-    else if (this.tab === 'alloys') body.innerHTML = this.alloysHTML();
-    else body.innerHTML = this.labHTML();
-    body.scrollTop = scroll;
+    const html = this.tab === 'mats' ? this.matsHTML() : this.tab === 'alloys' ? this.alloysHTML() : this.labHTML();
+    if (body._h !== html) {
+      body.innerHTML = html;
+      body._h = html;
+      body.scrollTop = scroll;
+    }
     this.cardPulse.clear();
   }
 
@@ -419,14 +451,12 @@ export class UI {
       const sA = logPos(sl, 10, 4000),
         sB = logPos(Math.min(sh, 4000), 10, 4000);
       h += `<div class="prop"><span class="pk">Strength</span><div class="bar"><span class="rng ${sExact ? 'exact' : ''} ${sTxt === '?' ? 'unknown' : ''}" style="left:${sA * 100}%;width:${Math.max(0.5, (sB - sA) * 100)}%"></span></div><span class="pv">${sTxt}</span></div>`;
-      // column limit
+      // column limit, once both density and strength mean something
       const hLo = sl / (9.8 * dh),
         hHi = sh / (9.8 * dl);
-      if (hHi < 400 && dh < D_PRIOR[1]) {
-        const ht = hHi / hLo < 1.15 ? `${hLo.toFixed(0)} m` : `${hLo.toFixed(0)}–${hHi.toFixed(0)} m`;
-        h += `<div class="prop"><span class="pk">Column</span><span class="note-small" style="grid-column:2/4">a solid column stands about <b>${ht}</b> before its base gives way</span></div>`;
-      } else if (dh < D_PRIOR[1]) {
-        h += `<div class="prop"><span class="pk">Column</span><span class="note-small" style="grid-column:2/4">a solid column stands at least <b>${hLo.toFixed(0)} m</b></span></div>`;
+      if (dh < D_PRIOR[1] && sl > S_PRIOR[0] * 1.5) {
+        const ht = sh >= S_PRIOR[1] - 1 ? `at least <b>${hLo.toFixed(0)} m</b>` : hHi / hLo < 1.15 ? `about <b>${hLo.toFixed(0)} m</b>` : `<b>${hLo.toFixed(0)}–${hHi.toFixed(0)} m</b>`;
+        h += `<div class="prop"><span class="pk">Column</span><span class="note-small" style="grid-column:2/4">a solid column of it stands ${ht} before its base gives way</span></div>`;
       }
       // brittleness
       const bTxt = k.b !== null ? brittleWord(k.b) : k.bHint !== null ? `looks ${brittleWord(k.bHint)}` : '?';
@@ -784,7 +814,7 @@ export class UI {
       const reach = this.reachFor(p);
       h += reach.ok ? `<div class="tt-act">Click to haul in · ${reach.d.toFixed(0)} m</div>` : `<div class="tt-dim">Out of reach (${reach.d.toFixed(0)} m). A crane nearer to it would get it.</div>`;
       if (!k.seen) h += `<div class="tt-dim">Unknown material: haul one in to start a notebook page.</div>`;
-    } else if (hv && (hv.kind === 'block' || hv.kind === 'rocket')) {
+    } else if (hv && (hv.kind === 'block' || hv.kind === 'rocket') && hv.ref !== this.selected) {
       const b = hv.ref;
       const f = FUNCS[b.fn];
       const L = g.planet.layers;
@@ -1034,7 +1064,7 @@ export class UI {
     let h = `<button class="icon-btn mp-close" data-close>×</button><h4>${f.name}${f.fixedMat ? '' : ` <span class="tt-dim">· ${esc(b.mat.name)}</span>`}</h4><div class="note-small">${esc(f.desc)}</div>`;
     if (b.fn === 'smelter') {
       const raws = g.planet.materials.filter((m) => g.knowledge.get(m).seen);
-      const [ra, rb] = b.state.recipe || ['', ''];
+      const [ra, rb] = b.state.recipe || (this.pendingRecipe && this.pendingRecipe.block === b ? this.pendingRecipe.ids : ['', '']);
       const opt = (sel) => `<option value="">—</option>` + raws.map((m) => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${esc(m.name)} (${g.stockOf(m.id)})</option>`).join('');
       h += `<select data-recipe="0">${opt(ra)}</select><select data-recipe="1">${opt(rb)}</select>`;
       if (ra && rb) {
@@ -1096,6 +1126,7 @@ export class UI {
     const sels = $('module-panel').querySelectorAll('select[data-recipe]');
     const a = sels[0].value,
       c = sels[1].value;
+    this.pendingRecipe = { block: b, ids: [a, c] };
     if (a && c && a !== c) g.modules.setRecipe(b, a, c);
     else g.modules.setRecipe(b, null, null);
     if (a && c && a === c) g.log('Pick two different materials.', 'warn');

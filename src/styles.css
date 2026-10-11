@@ -397,6 +397,11 @@ body.journal-closed #objectives {
 .log-line.good {
   border-color: var(--safe);
 }
+.log-line .log-n {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
 .log-line .mat-dot {
   display: inline-block;
   width: 9px;

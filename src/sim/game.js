@@ -465,7 +465,7 @@ export class Game {
       this.emit('tremor', { warn: true });
     }
     if (this.time > this.tremorAt) {
-      const amp = (0.38 + 1.25 * prog * prog + this.rng.range(-0.08, 0.12)) * this.diff.tremorScale;
+      const amp = (0.4 + 1.8 * prog * prog + this.rng.range(-0.08, 0.15)) * this.diff.tremorScale;
       this.lastTremorAmp = amp;
       this.sea.addPacket(this.time, amp, 9 + this.rng.range(0, 5), 8.5 + this.rng.range(0, 2), -1);
       this.emit('tremor', { warn: false, amp });

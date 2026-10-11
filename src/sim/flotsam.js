@@ -78,7 +78,7 @@ export class Flotsam {
       body,
       pts,
       area,
-      units: debris ? 2 + Math.floor(this.rng() * 3) : Math.max(2, Math.round(area * 5)),
+      units: debris ? 2 + Math.floor(this.rng() * 3) : Math.max(3, Math.round(area * 7)),
       debris,
       settled: 0,
       layer: -1,
@@ -174,13 +174,13 @@ export class Flotsam {
   }
 
   /** A chunk at rest tells you where its density sits between the fluids around it. */
-  observeRest(c) {
+  observeRest(c, force = false) {
     const g = this.game;
     const col = g.colony;
-    if (!col) return;
+    if (!col || !c.body || c.debris) return;
     const p = c.body.getPosition();
     const cp = col.body.getPosition();
-    if (Math.abs(p.x - cp.x) > 60) return;
+    if (!force && Math.abs(p.x - cp.x) > 60) return;
     if (c.observed) return;
     c.observed = true;
     const L = g.planet.layers;
@@ -306,7 +306,8 @@ export class Grapples {
     const gr = { owner, target, phase: 'out', hx: op.x, hy: op.y, len: 0, t: 0, auto, tension: 0 };
     if (target.kind === 'chunk') {
       target.ref.grabbed = gr;
-      if (target.ref.settled > 0.3) this.game.flotsam.observeRest(target.ref);
+      const v = target.ref.body.getLinearVelocity();
+      if (target.ref.settled > 0.3 || Math.hypot(v.x, v.y) < 0.6) this.game.flotsam.observeRest(target.ref, true);
     }
     this.passThrough(target, true);
     this.list.push(gr);

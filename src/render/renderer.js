@@ -76,6 +76,7 @@ export class Renderer {
     this.scale = 1;
     this.quality = 1;
     this.prevY = new WeakMap();
+    this.firstSeen = new WeakMap();
     this.time = 0;
     this.splashT = 0;
     this.resize();
@@ -354,6 +355,19 @@ export class Renderer {
     this.bodyTransform(ctx, s.body, 1);
     const t = game.time;
     for (const b of s.list) {
+      let seen = this.firstSeen.get(b);
+      if (seen === undefined) this.firstSeen.set(b, (seen = this.time));
+      const age = this.time - seen;
+      let popped = false;
+      if (age < 0.22) {
+        const k = age / 0.22;
+        const sc = 0.55 + 0.45 * (1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2));
+        ctx.save();
+        ctx.translate(b.gx, b.gy);
+        ctx.scale(sc, sc);
+        ctx.translate(-b.gx, -b.gy);
+        popped = true;
+      }
       const x = b.gx - 0.5,
         y = b.gy - 0.5;
       const fn = b.fn;
@@ -408,6 +422,7 @@ export class Renderer {
         ctx.lineTo(b.gx, b.gy + 0.58);
         ctx.stroke();
       }
+      if (popped) ctx.restore();
     }
     // outline of the whole structure
     ctx.lineWidth = 0.045;
@@ -490,25 +505,26 @@ export class Renderer {
           const off = (rnd(i + 3) - 0.5) * 0.22 * v;
           pts.push([x0 + dx * (u % 1) + nx * off, y0 + dy * (u % 1) + ny * off]);
         }
-        const hot = Math.max(0, e.damage - 0.15);
-        ctx.lineWidth = 0.03 + 0.05 * v;
-        ctx.strokeStyle = `rgba(6,4,6,${0.55 + 0.4 * v})`;
+        const hot = Math.max(0, e.damage - 0.1);
         ctx.beginPath();
         pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
         for (let k = 0; k < Math.floor(v * 4); k++) {
           const p = pts[1 + Math.floor(rnd(20 + k) * (steps - 1))];
           const sgn = rnd(30 + k) < 0.5 ? -1 : 1;
-          const bl = 0.12 + rnd(40 + k) * 0.25 * v;
+          const bl = 0.12 + rnd(40 + k) * 0.28 * v;
           ctx.moveTo(p[0], p[1]);
           ctx.lineTo(p[0] + nx * sgn * bl + dx * (rnd(50 + k) - 0.5) * 0.2, p[1] + ny * sgn * bl + dy * (rnd(50 + k) - 0.5) * 0.2);
         }
+        ctx.lineWidth = 0.07 + 0.08 * v;
+        ctx.strokeStyle = `rgba(255,236,210,${0.18 + 0.25 * v})`;
+        ctx.stroke();
+        ctx.lineWidth = 0.035 + 0.05 * v;
+        ctx.strokeStyle = `rgba(8,4,6,${0.7 + 0.3 * v})`;
         ctx.stroke();
         if (hot > 0) {
           const flick = 0.75 + 0.25 * Math.sin(t * 23 + seed);
-          ctx.lineWidth = 0.018 + 0.03 * hot;
-          ctx.strokeStyle = `rgba(255,${Math.round(150 - 80 * hot)},60,${Math.min(1, hot * 1.4) * flick})`;
-          ctx.beginPath();
-          pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+          ctx.lineWidth = 0.02 + 0.035 * hot;
+          ctx.strokeStyle = `rgba(255,${Math.round(150 - 80 * hot)},60,${Math.min(1, hot * 1.6) * flick})`;
           ctx.stroke();
         }
       }
