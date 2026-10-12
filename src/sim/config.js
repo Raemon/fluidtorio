@@ -41,7 +41,7 @@ export const WALK_SPEED = 2.2;
 export const CLIMB_SPEED = 1.2;
 export const CAST_REACH = 11;
 export const BUILD_TIME = 1.1;
-export const ROW_FORCE = 6.5;
+export const ROW_FORCE = 15;
 
 export const FUNCS = {
   frame: {

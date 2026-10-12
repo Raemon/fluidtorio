@@ -75,6 +75,30 @@ function logPos(x, lo, hi) {
   return Math.max(0, Math.min(1, (Math.log(x) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))));
 }
 
+/** Patch a live DOM node to match a freshly parsed one, so buttons under the cursor survive updates. */
+function morph(a, b) {
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) return false;
+  if (a.nodeType === 3) {
+    if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue;
+    return true;
+  }
+  if (a.nodeType !== 1) return true;
+  for (const at of [...b.attributes]) if (a.getAttribute(at.name) !== at.value) a.setAttribute(at.name, at.value);
+  for (const at of [...a.attributes]) if (!b.hasAttribute(at.name)) a.removeAttribute(at.name);
+  morphChildren(a, b);
+  return true;
+}
+
+function morphChildren(a, b) {
+  const bn = [...b.childNodes];
+  while (a.childNodes.length > bn.length) a.removeChild(a.lastChild);
+  bn.forEach((n, i) => {
+    const cur = a.childNodes[i];
+    if (!cur) a.appendChild(n.cloneNode(true));
+    else if (!morph(cur, n)) a.replaceChild(n.cloneNode(true), cur);
+  });
+}
+
 function tip(title, key, body, meta) {
   return `<div class="tt-title">${title}${key ? `<span class="tt-key">${key}</span>` : ''}</div>${body ? `<div class="tt-dim">${body}</div>` : ''}${meta ? `<div class="tt-meta">${meta}</div>` : ''}`;
 }
@@ -175,7 +199,7 @@ export class UI {
       this.dirty.goal = true;
       this.app.audio && this.app.audio.play('collect');
     });
-    this.setJournal(game.progress.has('notebook') && window.innerWidth > 980, true);
+    this.setJournal(false, true);
     this.syncViews();
     this.markAll();
     this.renderPalette();
@@ -192,10 +216,8 @@ export class UI {
       if (id === 'drop') this.fresh.add('tool:drop');
       if (id === 'lens') this.fresh.add('lens');
       if (id === 'stress') this.fresh.add('stress');
-      if (id === 'notebook') {
-        if (window.innerWidth > 980) this.setJournal(true, true);
-        else this.fresh.add('nb-open');
-      }
+      // the notebook waits to be opened: the raft, not a panel, is where the game happens
+      if (id === 'notebook') this.fresh.add('nb-open');
     }
     this.syncViews();
     this.dirty.palette = true;
@@ -744,7 +766,9 @@ export class UI {
     const h = worst > 0.25 ? `<div class="g-item" data-tip="damage"><span class="g-label">JOINT</span><span class="g-val ${worst > 0.5 ? 'bad' : 'warn'}">${Math.round(worst * 100)}%</span></div>` : '';
     const el = $('gauge');
     if (el._h !== h) {
-      el.innerHTML = h;
+      const t = document.createElement('template');
+      t.innerHTML = h;
+      morphChildren(el, t.content);
       el._h = h;
     }
     this.renderForecast();
@@ -1307,6 +1331,7 @@ export class UI {
 
   openModule(b) {
     this.selected = b;
+    this.panelAt = null;
     this.renderModule();
     $('module-panel').classList.remove('hidden');
   }
@@ -1435,10 +1460,37 @@ export class UI {
       if (!sel.struct || sel.struct !== g.colony) return this.closeModule();
       p = sel.struct.worldPos(sel.gx, sel.gy);
     }
-    const s = this.R.toScreen(p.x, p.y);
+    // a panel whose subject has scrolled out of view waits for it to come back
+    const on = this.R.toScreen(p.x, p.y);
+    const visible = on.x > -20 && on.x < window.innerWidth + 20 && on.y > -20 && on.y < window.innerHeight + 20;
+    el.style.visibility = visible ? '' : 'hidden';
+    if (!visible) {
+      this.panelAt = null;
+      return;
+    }
+    // float above the thing, clear of anyone standing on the deck beside it
+    const s = this.R.toScreen(p.x, p.y + 2.2);
     const r = el.getBoundingClientRect();
-    el.style.left = `${Math.max(8, Math.min(window.innerWidth - r.width - 8, s.x + 28))}px`;
-    el.style.top = `${Math.max(8, Math.min(window.innerHeight - r.height - 8, s.y - r.height / 2))}px`;
+    let top = s.y - r.height - 6;
+    if (top < 8) top = this.R.toScreen(p.x, p.y - 1).y + 6;
+    const want = {
+      x: Math.max(8, Math.min(window.innerWidth - r.width - 8, s.x - r.width / 2)),
+      y: Math.max(8, Math.min(window.innerHeight - r.height - 8, top)),
+    };
+    // hold still while the raft rolls under it, so its buttons stay where the cursor is
+    const at = this.panelAt;
+    if (!at) this.panelAt = { ...want, moving: false };
+    else {
+      const d = Math.hypot(want.x - at.x, want.y - at.y);
+      if (d > 40) at.moving = true;
+      if (at.moving) {
+        at.x += (want.x - at.x) * 0.15;
+        at.y += (want.y - at.y) * 0.15;
+        if (d < 2) at.moving = false;
+      }
+    }
+    el.style.left = `${Math.round(this.panelAt.x)}px`;
+    el.style.top = `${Math.round(this.panelAt.y)}px`;
     this.modT = (this.modT || 0) + 1;
     if (this.modT % 15 === 0) this.renderModule();
   }
@@ -1806,8 +1858,13 @@ export class UI {
       ctx.rotate(-ang);
       ctx.font = '600 11px "Manrope", system-ui, sans-serif';
       ctx.textAlign = dx > 0 ? 'right' : 'left';
+      const txt = `${m.label} · ${Math.round(Math.abs(m.x - cc.x))} m`;
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(12,14,22,0.75)';
+      ctx.strokeText(txt, dx > 0 ? -16 : 16, 4);
       ctx.fillStyle = `rgba(${m.color},0.95)`;
-      ctx.fillText(`${m.label} · ${Math.round(Math.abs(m.x - cc.x))} m`, dx > 0 ? -16 : 16, 4);
+      ctx.fillText(txt, dx > 0 ? -16 : 16, 4);
       ctx.restore();
     }
   }

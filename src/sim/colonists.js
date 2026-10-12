@@ -497,9 +497,12 @@ export class Colonists {
     if (this.walk(c, dt)) {
       j.t -= dt;
       c.pose = 'stand';
+      const taken = (x, y, o) => this.list.some((d) => d !== o && d.cx === x && d.cy === y);
+      // nobody stands on anyone's toes
+      if (taken(c.cx, c.cy, c)) j.t = Math.min(j.t, 0.4);
       if (j.t <= 0) {
         // stretch the legs a little
-        const opts = [...this.nodes.values()].filter((n) => n.stand && Math.abs(n.x - c.cx) <= 3 && Math.abs(n.y - c.cy) <= 1);
+        const opts = [...this.nodes.values()].filter((n) => n.stand && Math.abs(n.x - c.cx) <= 3 && Math.abs(n.y - c.cy) <= 1 && !taken(n.x, n.y, c));
         const n = opts[Math.floor(Math.random() * opts.length)];
         if (n) {
           const r = this.route(c, (m) => (m === n ? 0 : Infinity));

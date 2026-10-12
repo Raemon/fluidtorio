@@ -166,6 +166,42 @@ export class Flotsam {
     return false;
   }
 
+  /**
+   * Floating debris doesn't pile up against the bow of a raft under way: in the real sea it would
+   * slide around the hull, so here it passes behind it.
+   */
+  slip(c, dt) {
+    const col = this.game.colony;
+    if (!col || c.grabbed || c.aboard) return;
+    if (c.slipT > 0) {
+      c.slipT -= dt;
+      if (c.slipT > 0) return;
+      const q = col.body.getLocalPoint(c.body.getPosition());
+      const b = col.bounds();
+      if (q.x > b.x0 - 1.3 && q.x < b.x1 + 1.3 && q.y > b.y0 - 1.3 && q.y < b.y1 + 1.3) {
+        c.slipT = 0.4;
+        return;
+      }
+      this.setSlip(c, false);
+      return;
+    }
+    const vx = col.body.getLinearVelocity().x;
+    if (Math.abs(vx - c.body.getLinearVelocity().x) < 0.1) return;
+    for (let ce = c.body.getContactList(); ce; ce = ce.next) {
+      if (ce.other !== col.body || !ce.contact.isTouching()) continue;
+      const n = ce.contact.getWorldManifold(null).normal;
+      if (Math.abs(n.x) > 0.6) {
+        c.slipT = 2;
+        this.setSlip(c, true);
+        return;
+      }
+    }
+  }
+
+  setSlip(c, on) {
+    for (let f = c.body.getFixtureList(); f; f = f.getNext()) f.setFilterData({ groupIndex: 0, categoryBits: CAT_CHUNK, maskBits: on ? 0xffff & ~CAT_STRUCT : 0xffff });
+  }
+
   aboard() {
     return this.chunks.filter((c) => c.aboard && !c.grabbed && c.body);
   }
@@ -180,6 +216,7 @@ export class Flotsam {
         if (!c.grabbed) this.remove(c);
         continue;
       }
+      this.slip(c, dt);
       const wasAboard = c.aboard;
       if (this.touchingColony(c)) {
         c.aboardT = 0.8;
@@ -491,6 +528,11 @@ export class Grapples {
       g.stats.chunks++;
       if (!ref.debris && !ref.crate && ref.mat.d > g.planet.layers[4].rho) g.progress.findFuel('chunk', ref.mat);
       g.emit('haul', ref);
+      // sandbox stores are abstract: the haul goes straight into them
+      if (g.sandbox) {
+        g.addStock(ref.mat.id, ref.units);
+        this.game.flotsam.remove(ref);
+      }
     } else {
       // a wreck: break it down into salvage on the deck
       const refund = new Map();
@@ -506,7 +548,8 @@ export class Grapples {
       g.removeStructure(ref);
       let k = 0;
       for (const [m, n] of refund)
-        if (n > 0) {
+        if (n > 0 && g.sandbox) g.addStock(m.id, n);
+        else if (n > 0) {
           const c = g.flotsam.produce(m, n, spot.x + (k++ - 0.5) * 0.6, spot.y + 0.4);
           c.body.setLinearVelocity(new pl.Vec2(v.x, v.y));
           c.aboard = true;

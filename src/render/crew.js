@@ -253,33 +253,51 @@ export function drawRock(ctx, rock, density) {
   const top = Math.max(...o.map((p) => p[1]));
   const bot = Math.min(...o.map((p) => p[1]));
   const g = ctx.createLinearGradient(0, top, 0, bot);
-  g.addColorStop(0, '#4a4a52');
-  g.addColorStop(0.3, '#2e2e35');
+  g.addColorStop(0, '#4f4c55');
+  g.addColorStop(0.25, '#34323a');
   g.addColorStop(1, '#141418');
   ctx.fillStyle = g;
   ctx.fill();
   ctx.save();
   ctx.clip();
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-  ctx.lineWidth = 0.08;
-  ctx.beginPath();
-  for (let x = -6; x <= 6; x += 0.9) {
-    ctx.moveTo(rock.x + x, top + 1);
-    ctx.lineTo(rock.x + x + Math.sin(x * 3.1) * 0.4, bot);
+  const rnd = (i) => {
+    const v = Math.sin(i * 12.9898 + rock.x * 0.37) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  // basalt columns: each its own shade, lit from the sun's side, with staggered cooling joints
+  let x = -8;
+  for (let i = 0; x < 8; i++) {
+    const w = 0.65 + 0.45 * rnd(i);
+    const lean = (rnd(i + 50) - 0.5) * 0.25;
+    const x0 = rock.x + x,
+      x1 = x0 + w;
+    const shade = rnd(i + 100);
+    ctx.fillStyle = shade > 0.5 ? `rgba(255,255,255,${(shade - 0.5) * 0.09})` : `rgba(0,0,0,${(0.5 - shade) * 0.3})`;
+    ctx.beginPath();
+    ctx.moveTo(x0, top + 1);
+    ctx.lineTo(x1, top + 1);
+    ctx.lineTo(x1 + lean * (top - bot), bot);
+    ctx.lineTo(x0 + lean * (top - bot), bot);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,240,220,0.07)';
+    ctx.fillRect(x0, bot, 0.07, top - bot + 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(x1 - 0.06, bot, 0.06, top - bot + 1);
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 0.05;
+    ctx.beginPath();
+    for (let y = top - 0.6 - rnd(i + 7) * 1.6, k = 0; y > bot; y -= 1.3 + rnd(i * 7 + k) * 1.5, k++) {
+      const tilt = (rnd(i * 3 + k) - 0.5) * 0.3;
+      ctx.moveTo(x0, y + tilt);
+      ctx.lineTo(x1, y - tilt);
+    }
+    ctx.stroke();
+    x += w;
   }
-  for (let y = top; y > bot; y -= 2.6) {
-    ctx.moveTo(rock.x - 7, y + Math.sin(y) * 0.2);
-    ctx.lineTo(rock.x + 7, y - 0.3 + Math.cos(y) * 0.2);
-  }
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-  ctx.lineWidth = 0.05;
-  ctx.beginPath();
-  for (let x = -6; x <= 6; x += 0.9) {
-    ctx.moveTo(rock.x + x + 0.08, top + 1);
-    ctx.lineTo(rock.x + x + 0.08 + Math.sin(x * 3.1) * 0.4, bot);
-  }
-  ctx.stroke();
+  // wet, darker below the waterline
+  ctx.fillStyle = 'rgba(10,10,16,0.35)';
+  ctx.fillRect(rock.x - 9, bot, 18, -bot);
   ctx.restore();
   ctx.lineWidth = 0.07;
   ctx.strokeStyle = 'rgba(0,0,0,0.6)';

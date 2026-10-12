@@ -41,7 +41,7 @@ export class World {
     };
     this.sites = [
       { key: 'start', kind: 'wreckfield', x: 0, mats: take(floats[0]), debris: 16, name: 'the crash site' },
-      { key: 'pod', kind: 'pod', x: side * r.range(46, 60), mats: [], debris: 10, castaway: true, name: 'the escape pod' },
+      { key: 'pod', kind: 'pod', x: side * r.range(36, 46), mats: [], debris: 10, castaway: true, name: 'the escape pod' },
       { key: 'pumice', kind: 'pumice', x: -side * r.range(100, 130), mats: take(floats[1] || floats[0], i12[0]), name: 'the pumice raft' },
       { key: 'stack', kind: 'stack', x: side * r.range(190, 235), mats: take(sinks[0], i23[0]), castaway: true, name: 'the basalt stack' },
       { key: 'far', kind: 'wreck', x: -side * r.range(280, 330), mats: [], debris: 14, castaway: true, name: 'the far wreck' },

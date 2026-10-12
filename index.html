@@ -68,8 +68,8 @@
           <div class="kicker">A game of buoyancy, load paths and experiments</div>
           <h1>FLUIDTORIO</h1>
           <p class="lede">
-            Your lander broke up over <b>Strata</b>, a world of stacked, unmixing seas under a waking volcano. Build a floating colony out of materials no one has
-            ever tested. Reach down into the fuel deep and up into the oxidiser sky, and launch before the mountain does.
+            Your lander broke up over <b>Strata</b>, a world of stacked, unmixing seas under a waking volcano. One survivor, one raft, a sea full of wreckage.
+            Fish it in, find the others, and build a floating colony out of materials no one has ever tested. Then launch before the mountain does.
           </p>
           <p class="lede small">
             Nothing here comes with a datasheet. Every chunk you haul in, every joint that creaks, every tower that falls tells you something. The fastest
@@ -80,9 +80,9 @@
             <button id="seed-random" class="ghost-btn" title="New random planet">↻</button>
           </div>
           <div class="row diff" id="diff-row">
-            <button data-diff="relaxed">Relaxed · 40 min</button>
-            <button data-diff="standard" class="active">Standard · 28 min</button>
-            <button data-diff="harrowing">Harrowing · 19 min</button>
+            <button data-diff="relaxed">Relaxed · 50 min</button>
+            <button data-diff="standard" class="active">Standard · 36 min</button>
+            <button data-diff="harrowing">Harrowing · 26 min</button>
           </div>
           <div class="row">
             <button id="btn-start" class="primary">Make landfall</button>
@@ -100,34 +100,37 @@
             <div>
               <h3>The goal</h3>
               <p>Launch a rocket that reaches <b>escape speed (170 m/s)</b> before the volcano erupts. Rockets burn <b>propellant</b>: fuel from the deepest liquid, refined with oxidiser from the highest air.</p>
-              <p>You start with a raft, a grapple and some salvage. New kinds of block appear as you find a use for them.</p>
-              <h3>Floating</h3>
-              <p>Every block displaces fluid and is pushed up by the weight of what it displaces. <b>Spare lift</b> is how much more you can add before the deck goes under. <b>Floats</b> add lift but are weak. A heavy, deep keel steadies a tall tower; a buoyant keel tries to flip you.</p>
+              <h3>Your people</h3>
+              <p>You start with one survivor. Click something floating and they walk to the edge and cast a line for it. Click a survivor to steer them directly, or set them to <b>fish by themselves</b>. Others are out there; a flare means someone is waiting.</p>
+              <p>Plan a block and your people fetch the materials and build it. A <b>Crane</b> fishes further out than anyone can cast.</p>
+              <h3>Everything weighs something</h3>
+              <p>Whatever you haul in lands on the deck and stays there: it has weight, it slides when the raft rolls, and it can go over the side. A <b>Stockpile</b> holds it. Every block, crate and person pushes the raft down, and the marks on the hull show how far.</p>
             </div>
             <div>
-              <h3>Load</h3>
-              <p>Weight flows down through joints to whatever holds it up. Joints carry vertical load well and sideways load poorly. Overloaded joints <b>creak, crack and snap</b>. Brittle materials barely warn you.</p>
+              <h3>Floating and load</h3>
+              <p>Every block is pushed up by the weight of the fluid it displaces. <b>Floats</b> add lift but are weak. A heavy, deep keel steadies a tall tower; a buoyant one tries to flip you. Weight flows down through joints; joints that are overloaded <b>creak, crack and snap</b>, and brittle ones barely warn you.</p>
               <h3>Finding out</h3>
-              <p>Nothing comes with a datasheet, and there is no lab. Everything you know, you see happen. The notebook keeps the range each property could still be in, and hovering a property shows how you know it.</p>
+              <p>Nothing comes with a datasheet, and there is no lab. Everything you know, you see happen. The notebook keeps the range each property could still be in.</p>
               <ul>
-                <li><b>Drop a test cube</b> (<kbd>G</kbd>): where it settles, how deep it floats, and what it does in each layer it sinks through</li>
-                <li><b>Weigh it on the deck</b>: every block you add pushes the raft down. Weigh several of one material at once, in calm water. Weigh two unknowns together and you can't tell them apart.</li>
-                <li><b>Load a joint</b>: joints that hold set a floor on strength; joints that crack or snap set a ceiling. Dense blocks stacked on a test joint load it fastest.</li>
-                <li><b>Smelt a pair</b>: the only way to learn an alloy. Some pairs explode, so smelt untested ones well away from the core.</li>
+                <li><b>Throw a test cube</b> (<kbd>G</kbd>): see where it settles, how deep it floats, and what each layer it sinks through does to it.</li>
+                <li><b>Watch the waterline</b>: anything added to the raft pushes it down. Calm water reads better than a swell.</li>
+                <li><b>Load a joint</b>: a joint that holds sets a floor on strength, and one that cracks sets a ceiling.</li>
+                <li><b>Smelt a pair</b>: the only way to learn an alloy. Some pairs explode.</li>
               </ul>
               <p>Previews and the stress view use only what you know. <span class="safe">Green</span> is certain, <span class="risk">amber</span> depends on what you don't know yet, <span class="fail">red</span> will fail.</p>
             </div>
             <div>
               <h3>Controls</h3>
               <table class="keys">
-                <tr><td>Click a chunk</td><td>haul it in</td></tr>
-                <tr><td>Click a block</td><td>its options</td></tr>
-                <tr><td><kbd>1</kbd>–<kbd>0</kbd> <kbd>T</kbd> <kbd>C</kbd></td><td>pick a block to build</td></tr>
+                <tr><td>Click flotsam</td><td>fish it in</td></tr>
+                <tr><td>Click a survivor</td><td>select; click the deck to send them</td></tr>
+                <tr><td>Click the lander core</td><td>row, anchor</td></tr>
+                <tr><td>Click a block or item</td><td>its options</td></tr>
+                <tr><td><kbd>1</kbd>–<kbd>0</kbd> <kbd>T</kbd> <kbd>C</kbd></td><td>plan a block</td></tr>
                 <tr><td><kbd>Q</kbd> <kbd>E</kbd></td><td>cycle material</td></tr>
-                <tr><td>Click / drag</td><td>place blocks</td></tr>
-                <tr><td>Right-click a block</td><td>dismantle (75% back)</td></tr>
-                <tr><td><kbd>G</kbd></td><td>drop a test cube</td></tr>
-                <tr><td><kbd>R</kbd> <kbd>J</kbd> <kbd>X</kbd></td><td>patch, jettison, dismantle tools</td></tr>
+                <tr><td>Right-click</td><td>dismantle a block, cancel a plan</td></tr>
+                <tr><td><kbd>G</kbd></td><td>throw a test cube</td></tr>
+                <tr><td><kbd>R</kbd> <kbd>J</kbd> <kbd>X</kbd></td><td>patch, jettison, dismantle</td></tr>
                 <tr><td><kbd>Esc</kbd></td><td>back to pointer</td></tr>
                 <tr><td>Right-drag, <kbd>WASD</kbd>, wheel</td><td>pan, zoom</td></tr>
                 <tr><td><kbd>F</kbd></td><td>find the colony</td></tr>
